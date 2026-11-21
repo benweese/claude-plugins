@@ -1,11 +1,11 @@
 name: Docs site
 
-# Publishes README, the worked example and the changelog to
+# Publishes the READMEs, the qa worked example, changelog and the marketplace plan to
 # https://code.benweese.com/playwright-ai-qa-agents/, rendered by GitHub's Markdown API.
 on:
   push:
     branches: [main]
-    paths: ["README.md", "CHANGELOG.md", "docs/**", "scripts/build-site.mjs", "scripts/site.css", ".github/workflows/pages.yml"]
+    paths: ["README.md", "docs/**", "plugins/*/README.md", "plugins/*/CHANGELOG.md", "plugins/*/docs/**", "scripts/build-site.mjs", "scripts/site.css", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:

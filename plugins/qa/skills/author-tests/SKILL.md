@@ -62,7 +62,7 @@ Wait for approval. Apply their changes to the plan before going on.
 npx playwright test <spec path> --reporter=line
 ```
 
-Go through the results with the user. If the site doesn't match the plan, the test stays failing; don't change the assertion. Offer `/playwright-qa-agents:bug-report`.
+Go through the results with the user. If the site doesn't match the plan, the test stays failing; don't change the assertion. Offer `/qa:bug-report`.
 
 ## 7. Heal (UI only, if needed)
 
