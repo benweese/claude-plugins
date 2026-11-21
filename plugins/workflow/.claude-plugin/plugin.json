@@ -1,7 +1,7 @@
 {
 	"name": "workflow",
-	"version": "0.1.0",
-	"description": "Day-to-day repo workflow skills. Today: check (run the repo's lint, optionally auto-fixing).",
+	"version": "0.2.0",
+	"description": "Repo workflow skills: /board (a GitHub Project board: show, check blockers, start an issue; configured in .claude/board.json) and check (run the repo's lint).",
 	"author": {
 		"name": "Ben Weese",
 		"url": "https://benweese.com"
