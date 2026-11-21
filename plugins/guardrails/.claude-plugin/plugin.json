@@ -1,0 +1,19 @@
+{
+	"name": "guardrails",
+	"version": "0.1.0",
+	"description": "Safety hooks for Claude Code: blocks committing secrets (on by default); opt-in protected files, a confirm step for destructive commands, and lint after edit.",
+	"author": {
+		"name": "Ben Weese",
+		"url": "https://benweese.com"
+	},
+	"homepage": "https://github.com/benweese/playwright-ai-qa-agents/tree/main/plugins/guardrails",
+	"repository": "https://github.com/benweese/playwright-ai-qa-agents",
+	"license": "MIT",
+	"keywords": [
+		"security",
+		"secrets",
+		"gitleaks",
+		"hooks",
+		"guardrails"
+	]
+}

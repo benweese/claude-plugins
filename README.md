@@ -13,8 +13,9 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace named **`benw
 | [qa](plugins/qa/README.md) | 1.1.0 | Plan, generate, run and heal Playwright API and UI tests in TypeScript, with a human review step between plan and code |
 | [docs](plugins/docs/README.md) | 0.2.0 | `/docs sweep` (README, `CLAUDE.md`, JSDoc) and `/docs phase N` (end-of-phase docs update + PR) |
 | [workflow](plugins/workflow/README.md) | 0.2.0 | `/board` for GitHub Projects (configured per repo) and a lint check |
+| [guardrails](plugins/guardrails/README.md) | 0.1.0 | Blocks committing secrets (on by default); opt-in protected files, a confirm step for destructive commands, lint after edit |
 
-Planned: `accessibility`, `privacy` and `guardrails`, plus more for `qa`, `docs` and `workflow`. They're added here as each one ships. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
+Planned: `accessibility` and `privacy`, plus more for `qa`, `docs` and `workflow`. They're added here as each one ships. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
 
 ## Install
 
@@ -31,6 +32,7 @@ claude plugin marketplace add benweese/playwright-ai-qa-agents
 claude plugin install qa@benweese
 claude plugin install docs@benweese
 claude plugin install workflow@benweese
+claude plugin install guardrails@benweese
 ```
 
 Add `--scope project` to record a plugin in the repo's `.claude/settings.json` for everyone who opens it. Where your client has the `/plugin` command, `/plugin install <plugin> --marketplace benweese/playwright-ai-qa-agents` does the same.
@@ -41,7 +43,7 @@ Add `--scope project` to record a plugin in the repo's `.claude/settings.json` f
 
 ## Hooks are opt-in per project
 
-Claude Code runs a plugin's hooks in every project where the plugin is enabled. So every hook in these plugins reads the project's own config (`.claude/<plugin>.json`) first and does nothing unless that project opts in. A missing or invalid config means **off**. The one planned exception is the `guardrails` secret blocker, which is on once you install `guardrails` (projects can opt out). Details are in the [marketplace plan](docs/marketplace-plan.md).
+Claude Code runs a plugin's hooks in every project where the plugin is enabled. So every hook in these plugins reads the project's own config (`.claude/<plugin>.json`) first and does nothing unless that project opts in. A missing or invalid config means **off**. The one exception is the `guardrails` secret blocker, which is on once you install `guardrails` (projects can opt out). Details are in the [marketplace plan](docs/marketplace-plan.md).
 
 ## Repo layout
 
