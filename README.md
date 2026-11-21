@@ -11,7 +11,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace named **`benw
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
 | [qa](plugins/qa/README.md) | 1.1.0 | Plan, generate, run and heal Playwright API and UI tests in TypeScript, with a human review step between plan and code |
-| [docs](plugins/docs/README.md) | 0.1.0 | Keep README, `CLAUDE.md` files and code docs up to date |
+| [docs](plugins/docs/README.md) | 0.2.0 | `/docs sweep` (README, `CLAUDE.md`, JSDoc) and `/docs phase N` (end-of-phase docs update + PR) |
 | [workflow](plugins/workflow/README.md) | 0.1.0 | Repo workflow skills (lint check today) |
 
 Planned: `accessibility`, `privacy` and `guardrails`, plus more for `qa`, `docs` and `workflow`. They're added here as each one ships. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
