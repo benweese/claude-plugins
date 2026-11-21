@@ -114,6 +114,24 @@ It maps the page, drafts `plans/<feature>.md` and **stops for your review**. Onc
 
 Lint (`/workflow:check`) and docs upkeep (`/docs:update-docs`) are in the [workflow](../workflow/README.md) and [docs](../docs/README.md) plugins.
 
+## Test-file hook (opt-in)
+
+After Claude edits a Playwright test file (`*.spec.ts`, `*.test.ts`, and the `.js` / `.mjs` / `.cjs` versions), the hook:
+
+1. finds the nearest `playwright.config.{ts,js,mjs,cjs}` at or above the file (so a suite in `e2e/` works);
+2. from that folder, runs the project's own ESLint on the file, then `playwright test --list <file>`;
+3. on a failure, hands the output back to Claude to fix (the edit stays); otherwise shows a one-line note with the elapsed time.
+
+It uses only the project's `node_modules/.bin` tools and never downloads anything. If ESLint or `@playwright/test` isn't installed it says the check was skipped; it stops after 60 seconds. Outside a Playwright folder it does nothing.
+
+**It's off until a project opts in**, because Claude Code runs a plugin's hooks in every project where the plugin is enabled. Add `.claude/qa.json` to the test repo:
+
+```json
+{ "version": 1, "hooks": { "lintAfterEdit": true } }
+```
+
+A missing or invalid file means off.
+
 ## Guardrails
 
 These rules exist because AI test authoring fails in predictable ways:
@@ -229,6 +247,8 @@ agents/                           page-mapper, planners, generators, healer
 skills/author-tests/              the full authoring flow
 skills/run-spec/  skills/bug-report/
 skills/playwright-cli/            Playwright's skill, vendored (see above)
+hooks/hooks.json                  the opt-in test-file hook (PostToolUse)
+scripts/test-file-check.mjs       what the hook runs; test/ has its node:test suite
 docs/worked-example.md            one feature followed through every stage
 CHANGELOG.md                      what changed in each version
 ```

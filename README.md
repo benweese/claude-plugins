@@ -10,7 +10,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace named **`benw
 
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
-| [qa](plugins/qa/README.md) | 1.0.0 | Plan, generate, run and heal Playwright API and UI tests in TypeScript, with a human review step between plan and code |
+| [qa](plugins/qa/README.md) | 1.1.0 | Plan, generate, run and heal Playwright API and UI tests in TypeScript, with a human review step between plan and code |
 | [docs](plugins/docs/README.md) | 0.1.0 | Keep README, `CLAUDE.md` files and code docs up to date |
 | [workflow](plugins/workflow/README.md) | 0.1.0 | Repo workflow skills (lint check today) |
 
@@ -60,6 +60,7 @@ scripts/                          docs site build
 claude plugin validate .                         # the marketplace
 claude plugin validate plugins/<name> --strict   # one plugin
 node examples/sample-app/server.mjs              # the sample app on http://localhost:4321
+node --test plugins/*/test/*.test.mjs examples/sample-app/server.test.mjs   # hook + sample-app tests
 ```
 
 **Releasing a plugin:** bump `version` in `plugins/<name>/.claude-plugin/plugin.json` and in its entry in `.claude-plugin/marketplace.json` (CI fails if they differ), add a `CHANGELOG.md` entry, push to `main`, then tag `<name>-v<version>`.

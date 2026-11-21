@@ -35,5 +35,5 @@ jobs:
         run: claude plugin validate .
       - name: Validate each plugin (strict)
         run: for dir in plugins/*/; do claude plugin validate "$dir" --strict || exit 1; done
-      - name: Sample app smoke tests
-        run: node --test examples/sample-app/server.test.mjs
+      - name: Hook tests + sample app smoke tests
+        run: node --test plugins/*/test/*.test.mjs examples/sample-app/server.test.mjs
