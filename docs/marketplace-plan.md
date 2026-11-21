@@ -6,7 +6,7 @@ What the `benweese` marketplace will hold, how each plugin is configured per pro
 
 | Plugin | Status | Contents |
 | ------ | ------ | -------- |
-| `qa` | 1.0.0 | Agents: page-mapper, api/ui test planners and generators, ui-test-healer. Skills: author-tests, run-spec, bug-report, playwright-cli. Planned: a lint + `playwright test --list` hook after test-file edits; `/review-tests` with a test-reviewer agent; an a11y **testing** agent; a component testing agent |
+| `qa` | 1.1.0 | Agents: page-mapper, api/ui test planners and generators, ui-test-healer. Skills: author-tests, run-spec, bug-report, playwright-cli. Hook (opt-in): lint + `playwright test --list` after test-file edits. Planned: `/review-tests` with a test-reviewer agent; an a11y **testing** agent; a component testing agent |
 | `docs` | 0.1.0 | update-docs. Planned: one `/docs` skill with `sweep` and `phase` modes |
 | `workflow` | 0.1.0 | check. Planned: a config-driven `/board` for GitHub Projects |
 | `accessibility` | planned | Helps Claude **write** accessible code: `/a11y` (axe via Playwright, WCAG 2.2 AA in plain English) and an a11y-reviewer agent. Testing lives in `qa` |

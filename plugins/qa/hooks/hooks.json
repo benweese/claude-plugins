@@ -1,0 +1,17 @@
+{
+	"description": "qa: after a Playwright test file is edited, lint it and check `playwright test --list` loads it. Opt-in per project via .claude/qa.json.",
+	"hooks": {
+		"PostToolUse": [
+			{
+				"matcher": "Edit|Write|MultiEdit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/test-file-check.mjs\"",
+						"timeout": 70
+					}
+				]
+			}
+		]
+	}
+}

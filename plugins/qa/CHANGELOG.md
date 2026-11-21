@@ -2,6 +2,12 @@
 
 All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
 
+## [1.1.0] - 2026-11-21
+
+### Added
+
+- **Test-file hook** (`PostToolUse` on Edit / Write / MultiEdit): after a `*.{spec,test}.{ts,js,mjs,cjs}` file is edited, it lints that file with the project's ESLint and checks `playwright test --list <file>` still loads it, from the nearest `playwright.config.*` folder. Failures go back to Claude to fix (the edit stays); a missing tool or the 60 s cap is reported as skipped, never a silent pass; every result shows the elapsed time. **Opt-in per project** (`.claude/qa.json`); off everywhere else. No network.
+
 ## [1.0.0] - 2026-11-20
 
 ### Changed (breaking)

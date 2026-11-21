@@ -10,7 +10,7 @@
 			"name": "qa",
 			"source": "./plugins/qa",
 			"description": "Plan, generate, run and heal Playwright API and UI tests in TypeScript.",
-			"version": "1.0.0",
+			"version": "1.1.0",
 			"category": "testing"
 		},
 		{
