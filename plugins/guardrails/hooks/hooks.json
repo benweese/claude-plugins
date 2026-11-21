@@ -1,0 +1,21 @@
+{
+	"description": "guardrails: secret blocker before git commit (on by default); protected files, dangerous commands and lint after edit (opt-in via .claude/guardrails.json).",
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Bash",
+				"hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-bash.mjs\"", "timeout": 60 }]
+			},
+			{
+				"matcher": "Edit|Write|MultiEdit|Read",
+				"hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/protected-files.mjs\"", "timeout": 10 }]
+			}
+		],
+		"PostToolUse": [
+			{
+				"matcher": "Edit|Write|MultiEdit",
+				"hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/lint-after-edit.mjs\"", "timeout": 70 }]
+			}
+		]
+	}
+}
