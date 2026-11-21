@@ -1,6 +1,17 @@
 # Changelog
 
-All notable changes to the `playwright-qa-agents` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change agent behaviour.
+All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
+
+## [1.0.0] - 2026-11-20
+
+### Changed (breaking)
+
+- **Renamed `playwright-qa-agents` → `qa`**, and the marketplace `playwright-ai-qa-agents` → `benweese`. Install with `claude plugin install qa --marketplace benweese/playwright-ai-qa-agents` (or `claude plugin marketplace add benweese/playwright-ai-qa-agents` then `claude plugin install qa@benweese`). Uninstall the old `playwright-qa-agents@playwright-ai-qa-agents` first.
+- Skills are now `/qa:<skill>` (was `/playwright-qa-agents:<skill>`).
+- **Moved out:** `check` → the `workflow` plugin (`/workflow:check`); `update-docs` → the `docs` plugin (`/docs:update-docs`).
+- The plugin now lives in `plugins/qa/` of a multi-plugin marketplace repo.
+
+No change to what the agents and remaining skills do.
 
 ## [0.10.0] - 2026-11-12
 

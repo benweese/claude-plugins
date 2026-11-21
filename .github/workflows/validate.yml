@@ -1,4 +1,4 @@
-name: Validate plugin
+name: Validate plugins
 
 on:
   push:
@@ -16,15 +16,24 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Plugin and marketplace versions match
+      - name: Each plugin's version matches its marketplace entry
         run: |
-          plugin=$(jq -r .version .claude-plugin/plugin.json)
-          market=$(jq -r '.plugins[] | select(.name == "playwright-qa-agents") | .version' .claude-plugin/marketplace.json)
-          echo "plugin.json: $plugin, marketplace.json: $market"
-          if [ -z "$plugin" ] || [ "$plugin" = "null" ] || [ "$plugin" != "$market" ]; then
-            echo "::error::Versions differ. Set the same version in .claude-plugin/plugin.json and .claude-plugin/marketplace.json."
-            exit 1
-          fi
+          fail=0
+          for dir in plugins/*/; do
+            name=$(jq -r .name "$dir.claude-plugin/plugin.json")
+            plugin=$(jq -r .version "$dir.claude-plugin/plugin.json")
+            market=$(jq -r --arg n "$name" '.plugins[] | select(.name == $n) | .version' .claude-plugin/marketplace.json)
+            echo "$name: plugin.json $plugin, marketplace.json $market"
+            if [ -z "$market" ] || [ "$plugin" = "null" ] || [ "$plugin" != "$market" ]; then
+              echo "::error::$name: set the same version in $dir.claude-plugin/plugin.json and its marketplace.json entry."
+              fail=1
+            fi
+          done
+          exit $fail
       - run: npm install -g @anthropic-ai/claude-code
-      - name: Validate plugin and marketplace manifests
+      - name: Validate the marketplace
         run: claude plugin validate .
+      - name: Validate each plugin (strict)
+        run: for dir in plugins/*/; do claude plugin validate "$dir" --strict || exit 1; done
+      - name: Sample app smoke tests
+        run: node --test examples/sample-app/server.test.mjs

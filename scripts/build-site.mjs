@@ -12,8 +12,12 @@ const out = process.argv[2] ?? "_site";
 /** Source Markdown → page on the site. Links to any other repo file go to GitHub. */
 const PAGES = [
 	{ source: "README.md", file: "index.html", nav: "Overview" },
-	{ source: "docs/worked-example.md", file: "worked-example.html", nav: "Worked example" },
-	{ source: "CHANGELOG.md", file: "changelog.html", nav: "Changelog" }
+	{ source: "plugins/qa/README.md", file: "qa.html", nav: "qa" },
+	{ source: "plugins/qa/docs/worked-example.md", file: "worked-example.html", nav: "Worked example" },
+	{ source: "plugins/qa/CHANGELOG.md", file: "changelog.html", nav: "qa changelog" },
+	{ source: "plugins/docs/README.md", file: "docs.html", nav: "docs" },
+	{ source: "plugins/workflow/README.md", file: "workflow.html", nav: "workflow" },
+	{ source: "docs/marketplace-plan.md", file: "plan.html", nav: "Plan" }
 ];
 const pageFor = new Map(PAGES.map((p) => [p.source, p.file]));
 

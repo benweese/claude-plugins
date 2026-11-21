@@ -1,0 +1,16 @@
+{
+	"name": "workflow",
+	"version": "0.1.0",
+	"description": "Day-to-day repo workflow skills. Today: check (run the repo's lint, optionally auto-fixing).",
+	"author": {
+		"name": "Ben Weese",
+		"url": "https://benweese.com"
+	},
+	"homepage": "https://github.com/benweese/playwright-ai-qa-agents/tree/main/plugins/workflow",
+	"repository": "https://github.com/benweese/playwright-ai-qa-agents",
+	"license": "MIT",
+	"keywords": [
+		"workflow",
+		"lint"
+	]
+}
