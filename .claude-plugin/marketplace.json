@@ -23,8 +23,8 @@
 		{
 			"name": "workflow",
 			"source": "./plugins/workflow",
-			"description": "Repo workflow skills (lint check).",
-			"version": "0.1.0",
+			"description": "/board for GitHub Projects (configured per repo) and a lint check.",
+			"version": "0.2.0",
 			"category": "productivity"
 		}
 	]

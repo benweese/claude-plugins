@@ -14,9 +14,41 @@ Or `claude plugin marketplace add benweese/playwright-ai-qa-agents`, then `claud
 
 | Skill | Use |
 | ----- | --- |
-| `/workflow:check [fix]` | Run the repo's lint, optionally auto-fixing |
+| `/board [issue]` | Shows your GitHub Project's In progress and Ready items, the top Ready issue (or the one you name) and its blockers, and offers to start it. **Read-only until you say go.** Then it checks the working tree is clean (and asks if it isn't), assigns the issue, moves the card to In progress, branches from an up-to-date default branch, and lists the questions to answer before any code |
+| `/workflow:check [fix]` | Runs the repo's lint (`npm run lint`), or `npm run lint:fix` with `fix`, and reports what's left |
 
-Coming next: a config-driven `/board` for GitHub Projects (statuses, max in Ready and branch names from `.claude/board.json`; read-only until you say go). See the [marketplace plan](../../docs/marketplace-plan.md).
+`/workflow:board` works too, if another plugin also has a `/board`.
+
+Planned: `/release`.
+
+## Configure `/board`
+
+`/board` needs `.claude/board.json` in the repo. Without a valid one it stops and prints this template; it never guesses a project:
+
+```json
+{
+  "version": 1,
+  "owner": "<github-user-or-org>",
+  "project": 1,
+  "repo": null,
+  "phaseField": "Phase",
+  "maxReady": 3,
+  "maxInProgress": 1,
+  "branch": "{number}-{slug}",
+  "statuses": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In progress", "review": "Review", "done": "Done" }
+}
+```
+
+- `owner` + `project`: the Project's owner and number (from its URL). Required.
+- `repo`: `owner/name` of the issues' repo; `null` = the current repo.
+- `phaseField`: a single-select field to sort by (numbers first, then other values); `null` = sort by issue number.
+- `maxReady` / `maxInProgress`: limits it flags when exceeded.
+- `branch`: `{number}` and `{slug}` (short kebab-case title).
+- `statuses`: your Project's Status option names.
+
+It needs the GitHub CLI logged in with the `project` scope (`gh auth refresh -s project`).
+
+**Blockers:** it reads GitHub's native "blocked by" links (`gh issue view --json blockedBy`, or the REST `dependencies/blocked_by` endpoint) and "Blocked by #x" lines in the issue body. If it can't read one of those, it says so instead of reporting "no blockers".
 
 ## License
 
