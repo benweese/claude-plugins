@@ -7,7 +7,7 @@ What the `benweese` marketplace will hold, how each plugin is configured per pro
 | Plugin | Status | Contents |
 | ------ | ------ | -------- |
 | `qa` | 1.1.0 | Agents: page-mapper, api/ui test planners and generators, ui-test-healer. Skills: author-tests, run-spec, bug-report, playwright-cli. Hook (opt-in): lint + `playwright test --list` after test-file edits. Planned: `/review-tests` with a test-reviewer agent; an a11y **testing** agent; a component testing agent |
-| `docs` | 0.1.0 | update-docs. Planned: one `/docs` skill with `sweep` and `phase` modes |
+| `docs` | 0.2.0 | `/docs sweep` and `/docs phase N` (`update-docs` kept as a deprecated alias until 0.3.0) |
 | `workflow` | 0.1.0 | check. Planned: a config-driven `/board` for GitHub Projects |
 | `accessibility` | planned | Helps Claude **write** accessible code: `/a11y` (axe via Playwright, WCAG 2.2 AA in plain English) and an a11y-reviewer agent. Testing lives in `qa` |
 | `privacy` | planned | privacy-scan skill, privacy-reviewer agent, an opt-in commit-blocking hook, an optional plain-git hook installer |
@@ -25,7 +25,8 @@ Each plugin reads an optional file in the project's `.claude/` folder. Every fil
 
 // .claude/docs.json
 { "version": 1, "plan": "docs/plan.md", "changelog": "CHANGELOG.md", "runbook": "docs/ops-runbook.md",
-  "milestone": "Phase {n}", "prTitle": "docs: Phase {n} docs update", "claudeMdLines": { "root": 50, "other": 40 } }
+  "milestone": "Phase {n}", "docsIssue": "Phase {n}: Docs update", "prTitle": "docs: Phase {n} docs update",
+  "claudeMdLines": { "root": 50, "other": 40 }, "extraSteps": [] }
 
 // .claude/board.json
 { "version": 1, "owner": "<github-user>", "project": 1, "phaseField": "Phase", "maxReady": 3, "branch": "{number}-{slug}",

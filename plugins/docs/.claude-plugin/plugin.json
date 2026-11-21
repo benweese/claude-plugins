@@ -1,7 +1,7 @@
 {
 	"name": "docs",
-	"version": "0.1.0",
-	"description": "Keep a repo's documentation up to date: README, split CLAUDE.md files, JSDoc/TSDoc, and only comments that explain why.",
+	"version": "0.2.0",
+	"description": "One /docs skill: \"sweep\" keeps README, split CLAUDE.md files and JSDoc/TSDoc true to the code; \"phase N\" writes the end-of-phase docs update and opens its PR. Configured per repo in .claude/docs.json.",
 	"author": {
 		"name": "Ben Weese",
 		"url": "https://benweese.com"

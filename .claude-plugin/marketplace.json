@@ -16,8 +16,8 @@
 		{
 			"name": "docs",
 			"source": "./plugins/docs",
-			"description": "Keep README, CLAUDE.md files and code docs up to date.",
-			"version": "0.1.0",
+			"description": "/docs sweep (README, CLAUDE.md, JSDoc) and /docs phase N (end-of-phase docs update + PR).",
+			"version": "0.2.0",
 			"category": "documentation"
 		},
 		{
