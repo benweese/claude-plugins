@@ -13,7 +13,7 @@ All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.
 
 ### Fixed
 
-- Sample app `/`: the form inputs overflowed by a few pixels at 320px with 200% text (`box-sizing`); the new reflow check found it.
+- Sample app `/`: at 320px with 200% text, the form inputs overflowed by a few pixels (`box-sizing`) and, with wider fonts such as DejaVu Sans on CI, the heading's one long word didn't fit (`overflow-wrap: break-word`). The new reflow check found both; its failure message names the elements that stick out.
 
 ## [1.3.0] - 2026-11-21
 

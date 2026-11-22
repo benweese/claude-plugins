@@ -111,7 +111,7 @@ test("a11y helpers: the good page passes, the broken fixture fails each check fo
 		assert.equal(r["broken › escape"]?.status, "failed");
 		assert.match(r["broken › escape"].error, /Escape didn't close the dialog/);
 		assert.equal(r["broken › reflow"]?.status, "failed");
-		assert.match(r["broken › reflow"].error, /the page scrolls sideways/);
+		assert.match(r["broken › reflow"].error, /the page scrolls sideways .*too wide: <p> \\?"Fixed-size text/, "names the element that sticks out");
 		const findings = r["broken › reflow"].annotations.filter((a) => a.type === "a11y-finding").map((a) => a.description);
 		assert.ok(findings.some((f) => /fixed font size .*p\.fixed\.wide "Fixed-size text/.test(f)), `fixed px text reported as a finding: ${JSON.stringify(findings)}`);
 		assert.equal(r["good › reflow"].annotations.filter((a) => a.type === "a11y-finding").length, 0, "no findings on the good page");

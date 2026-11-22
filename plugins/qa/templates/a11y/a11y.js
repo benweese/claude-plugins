@@ -132,7 +132,13 @@ export async function expectReflow(page, { width = 320, height = 640, fontScale 
 	const problems = await page.evaluate(() => {
 		const out = [];
 		const de = document.documentElement;
-		if (de.scrollWidth > de.clientWidth + 1) out.push(`the page scrolls sideways (${de.scrollWidth}px wide in ${de.clientWidth}px)`);
+		if (de.scrollWidth > de.clientWidth + 1) {
+			const name = (el) => `<${el.tagName.toLowerCase()}>${el.id ? `#${el.id}` : ""} "${(el.textContent || el.getAttribute("aria-label") || "").trim().slice(0, 30)}"`;
+			// An element past the edge, or one whose content (a word that can't wrap) spills out of its own box.
+			const wide = Array.from(document.querySelectorAll("body *")).filter((el) => el.getClientRects().length && (el.getBoundingClientRect().right > de.clientWidth + 1 || el.scrollWidth > el.clientWidth + 1));
+			const deepest = wide.filter((el) => !wide.some((o) => o !== el && el.contains(o))).slice(0, 5);
+			out.push(`the page scrolls sideways (${de.scrollWidth}px wide in ${de.clientWidth}px); too wide: ${deepest.map((el) => `${name(el)} to ${Math.round(el.getBoundingClientRect().right)}px`).join(", ")}`);
+		}
 		for (const el of document.querySelectorAll("body *")) {
 			const s = getComputedStyle(el);
 			if (!el.textContent.trim() || !el.getClientRects().length) continue;
