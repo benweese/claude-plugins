@@ -113,10 +113,22 @@ main:focus {
 	color: var(--muted);
 }
 
-.pages a[aria-current="page"] {
+.pages a[aria-current] {
 	color: var(--text);
 	text-decoration-color: var(--accent);
 	text-decoration-thickness: 2px;
+}
+
+/* A plugin's own pages (README, changelog, docs) under the main row. */
+.pages.sub {
+	padding-block: 0 0.5rem;
+	font-weight: 500;
+	font-size: 0.95rem;
+}
+
+.pages.sub .name {
+	font-size: 0.95rem;
+	font-weight: 700;
 }
 
 .markdown-body {
