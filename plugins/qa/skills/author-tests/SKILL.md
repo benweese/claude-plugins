@@ -27,6 +27,9 @@ description → (page-mapper, UI only) → planner → HUMAN REVIEW → generato
 
 Stop at **HUMAN REVIEW** until the user approves, unless they explicitly asked to run everything without stopping.
 
+**Accessibility tests for a page** (axe, keyboard, focus, reflow, screen-reader structure): after step 0, run the
+**a11y-tester** agent for that page instead of the planner → generator path. Its ARIA baselines need the user's review.
+
 ## 1. Gather context
 
 Nothing is written to disk in this step. Collect what the planners need, to pass in their prompts:

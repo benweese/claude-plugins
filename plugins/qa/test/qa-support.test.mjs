@@ -1,7 +1,8 @@
 // node:test for qa-support: TS vs JS, bundles, headers, edited vs older copies, conflicts, devDependency plans.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { compat, depPlan, fileState, install, manifest, plan, repoInfo, status, update } from "../bin/qa-support";
@@ -99,4 +100,50 @@ test("status reports what's there", () => {
 	assert.match(status(dir).lines.join("\n"), /core: not copied/);
 	install(dir, ["ui"]);
 	assert.match(status(dir).lines.join("\n"), /ui: \d+\/\d+ files \(current\)/);
+});
+
+test("a11y bundle: the plugin's own .js + .d.ts, copied even when commons is installed", () => {
+	const a = manifest("a11y");
+	const withCommons = repo({ pkg: { devDependencies: { "@benweese/playwright-test-commons": "github:benweese/playwright-test-commons#v0.8.0" } } });
+	const p = plan(withCommons, ["ui", "a11y"]);
+	assert.match(p.lines[0], /is installed .* tests import ui from it/);
+	assert.match(p.lines.join("\n"), /Would copy: a11y\.js, a11y\.d\.ts/);
+	assert.doesNotMatch(p.lines.join("\n"), /ajv|@axe-core|@types\/node/, "only a11y's deps");
+	const r = install(withCommons, ["ui", "a11y"]);
+	assert.equal(r.ok, true);
+	assert.ok(existsSync(path.join(withCommons, "tests/support/a11y.js")));
+	assert.ok(existsSync(path.join(withCommons, "tests/support/a11y.d.ts")));
+	assert.equal(existsSync(path.join(withCommons, "tests/support/ui.ts")), false, "commons covers ui");
+	assert.match(readFileSync(path.join(withCommons, "tests/support/a11y.js"), "utf8").split("\n")[0], new RegExp(`^// qa-support: playwright-qa-agents/qa ${a.tag} · a11y\\.js · sha256:`));
+	assert.match(status(withCommons).lines.join("\n"), /a11y: 2\/2 files \(current\)/);
+	const js = repo({ ts: false });
+	install(js, ["a11y"]);
+	assert.ok(existsSync(path.join(js, "tests/support/a11y.d.ts")), "same files in a JS repo");
+});
+
+test("a11y copies: older unmodified → updated, edited → left alone, also with commons installed", () => {
+	const a = manifest("a11y");
+	const dir = repo({ pkg: { devDependencies: { "@benweese/playwright-test-commons": "^0.8.0" } } });
+	install(dir, ["a11y"]);
+	const f = path.join(dir, "tests/support/a11y.js");
+	const g = path.join(dir, "tests/support/a11y.d.ts");
+	writeFileSync(f, readFileSync(f, "utf8").replace(` ${a.tag} `, " v0.0.1 "));
+	writeFileSync(g, `${readFileSync(g, "utf8")}// mine\n`);
+	const u = update(dir);
+	assert.match(u.lines[0], /Updated: a11y\.js \(v0\.0\.1 → /);
+	assert.match(u.lines[1], /Left alone .*a11y\.d\.ts/);
+	assert.equal(fileState(f, a).state, "current");
+});
+
+test("unknown bundle names are refused by the CLI", () => {
+	const dir = repo();
+	const r = spawnSync(process.execPath, [path.join(import.meta.dirname, "..", "bin", "qa-support"), "plan", "--bundle", "a11y,extra"], { cwd: dir, encoding: "utf8" });
+	assert.equal(r.status, 2);
+	assert.match(r.stderr, /core, ui, a11y/);
+});
+
+test("a11y manifest lists exactly the template files on disk", () => {
+	const a = manifest("a11y");
+	assert.deepEqual(readdirSync(a.dir).filter((f) => f !== "manifest.json").sort(), Object.keys(a.files).sort());
+	assert.match(a.source, /^\S+$/, "the header regex needs a source without spaces");
 });

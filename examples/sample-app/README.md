@@ -9,8 +9,8 @@ node --test examples/sample-app/server.test.mjs   # smoke tests
 
 | Route | What it does |
 | ----- | ------------ |
-| `GET /` | The list and an "Add a book" form (labelled inputs, status and error messages) |
-| `GET /a11y-broken` | Accessibility fixture, broken on purpose. axe finds: no `lang`, an image without `alt`, low-contrast text, an unnamed button. Only a code review finds: an input labelled only by its placeholder, a clickable `div` (not keyboard-operable), a skipped heading level, a 16×16 target |
+| `GET /` | The list and an "Add a book" form (labelled inputs, status and error messages), and an accessible "About" `<dialog>` (focus in, trapped, Escape closes, focus returns) |
+| `GET /a11y-broken` | Accessibility fixture, broken on purpose. axe finds: no `lang`, an image without `alt`, low-contrast text, an unnamed button. Only a code review finds: an input labelled only by its placeholder, a clickable `div` (not keyboard-operable), a skipped heading level, a 16×16 target. Keyboard and layout checks find: no visible focus, a broken "Settings" modal (focus not moved in or trapped, Escape does nothing, focus not returned), fixed `px` text and a 900px-wide box that scrolls sideways at 320px |
 | `GET /api/books` | All books |
 | `POST /api/books` `{ "title", "author" }` | Adds a book. 400 with `errors` if a field is missing or the title is over 120 characters |
 | `GET /api/books/:id` | One book, or 404 |

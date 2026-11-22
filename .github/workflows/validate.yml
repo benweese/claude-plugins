@@ -38,7 +38,7 @@ jobs:
       - name: qa helper templates match the pinned commons tag
         run: |
           node scripts/sync-commons-templates.mjs
-          git diff --exit-code -- plugins/qa/templates || { echo "::error::plugins/qa/templates differ from the pinned commons tag — run: node scripts/sync-commons-templates.mjs"; exit 1; }
+          git diff --exit-code -- plugins/qa/templates/commons || { echo "::error::plugins/qa/templates/commons differs from the pinned commons tag — run: node scripts/sync-commons-templates.mjs"; exit 1; }
       - name: Real accessibility scan (axe in a temporary node_modules)
         run: |
           mkdir -p "$RUNNER_TEMP/a11y" && cd "$RUNNER_TEMP/a11y"

@@ -7,8 +7,9 @@
 	<style>
 		body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
 		label { display: block; margin-top: 1rem; font-weight: 600; }
-		input { width: 100%; padding: 0.5rem; font: inherit; }
+		input { width: 100%; box-sizing: border-box; padding: 0.5rem; font: inherit; }
 		button { margin-top: 1rem; padding: 0.6rem 1.2rem; font: inherit; }
+		:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }
 		.error { color: #a40000; }
 		.ok { color: #1d6b2f; }
 		li { margin: 0.25rem 0; }
@@ -29,6 +30,15 @@
 			<button type="submit">Add book</button>
 		</form>
 		<p id="message" role="alert"></p>
+
+		<button type="button" id="about-open">About this list</button>
+		<dialog id="about" aria-labelledby="about-title">
+			<h2 id="about-title">About</h2>
+			<p>A made-up reading list for testing.</p>
+			<label for="about-note">Note</label>
+			<input id="about-note">
+			<button type="button" id="about-close">Close</button>
+		</dialog>
 	</main>
 	<script>
 		const $ = (id) => document.getElementById(id);
@@ -61,6 +71,11 @@
 			$("message").textContent = res.ok ? `Added “${body.title}”.` : body.errors.join(". ");
 			if (res.ok) { $("add").reset(); load(); }
 		};
+
+		// An accessible modal: <dialog> moves focus in, keeps it there, closes on Escape; focus returns to the opener.
+		$("about-open").onclick = () => $("about").showModal();
+		$("about-close").onclick = () => $("about").close();
+		$("about").addEventListener("close", () => $("about-open").focus());
 
 		load();
 	</script>
