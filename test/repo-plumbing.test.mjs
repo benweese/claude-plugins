@@ -1,4 +1,5 @@
-// Repo plumbing checks: every workflow action is pinned to a commit SHA, the root README's plugin table matches
+// Repo plumbing checks: every workflow action is pinned to a commit SHA and allowed by the repo's Actions policy,
+// container images are digest-pinned where Dependabot can update them, the root README's plugin table matches
 // each plugin.json, and the docs site has a README and CHANGELOG page for every plugin with working links.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -24,6 +25,41 @@ test("every `uses:` in every workflow is pinned to a commit SHA (or a docker ima
 		}
 	}
 	assert.deepEqual(bad, []);
+});
+
+// The repo's Actions policy allows only GitHub-owned actions plus what's allow-listed in Settings → Actions (each at
+// an exact SHA). Keep this list the same as that setting.
+const ALLOWED_OWNERS = ["actions", "github"];
+
+test("workflows match the repo's Actions policy: GitHub-owned actions only, no docker:// steps", () => {
+	const dir = path.join(ROOT, ".github", "workflows");
+	const bad = [];
+	for (const f of readdirSync(dir).filter((x) => /\.ya?ml$/.test(x))) {
+		for (const [i, line] of readFileSync(path.join(dir, f), "utf8").split("\n").entries()) {
+			const m = /^\s*-?\s*uses:\s*(\S+)/.exec(line);
+			if (!m || m[1].startsWith("./")) continue;
+			if (m[1].startsWith("docker://")) bad.push(`${f}:${i + 1} docker:// steps are blocked by the policy — use docker run with an image pinned in .github/docker/<tool>/Dockerfile`);
+			else if (!ALLOWED_OWNERS.includes(m[1].split("/")[0])) bad.push(`${f}:${i + 1} ${m[1].split("@")[0]} isn't allowed by the repo's Actions policy`);
+		}
+	}
+	assert.deepEqual(bad, []);
+});
+
+test("container images are pinned by tag + digest in .github/docker/<tool>/Dockerfile, and workflows read them from there", () => {
+	const docker = path.join(ROOT, ".github", "docker");
+	const tools = readdirSync(docker);
+	assert.ok(tools.length >= 2);
+	for (const t of tools) {
+		const from = readFileSync(path.join(docker, t, "Dockerfile"), "utf8").split("\n").filter((l) => l.startsWith("FROM "));
+		assert.equal(from.length, 1, `${t}: one FROM line`);
+		assert.match(from[0], /^FROM [\w./-]+:[\w.-]+@sha256:[0-9a-f]{64}$/, `${t}: tag + digest`);
+	}
+	const dir = path.join(ROOT, ".github", "workflows");
+	for (const f of readdirSync(dir).filter((x) => /\.ya?ml$/.test(x))) {
+		const text = readFileSync(path.join(dir, f), "utf8");
+		for (const run of text.match(/^\s+docker run[^\n]*/gm) || []) assert.match(run, /"\$image"/, `${f}: docker run uses the pinned image ($image from .github/docker)`);
+	}
+	assert.match(readFileSync(path.join(ROOT, ".github", "dependabot.yml"), "utf8"), /package-ecosystem: docker[\s\S]*\/\.github\/docker\/\*/);
 });
 
 test("the root README's plugin table lists every plugin at its plugin.json version", () => {

@@ -67,12 +67,12 @@ CHANGELOG.md                      marketplace-level changes (each plugin has its
 | Workflow | Runs | What it checks |
 | -------- | ---- | -------------- |
 | `validate.yml` | every push and PR | the marketplace and every plugin (`claude plugin validate --strict`), plugin vs marketplace versions, the README table, the commons templates, every plugin's tests (with a real Playwright + axe run) |
-| `gitleaks.yml` | every push and PR | secrets in the commits |
-| `actionlint.yml` | when workflows change | the workflow files |
+| `gitleaks.yml` | every push and PR | secrets in the whole git history (the gitleaks CLI in a container) |
+| `actionlint.yml` | when workflows change | the workflow files (actionlint in a container) |
 | `codeql.yml` | PRs, pushes to `main`, weekly | code scanning: JavaScript/TypeScript and the workflows |
 | `pages.yml` | pushes to `main` that change docs | publishes the [docs site](https://code.benweese.com/playwright-ai-qa-agents/) |
 
-Every action is pinned to a commit SHA (a test fails on an unpinned `uses:`), and Dependabot keeps the pins current.
+The repo allows only GitHub-owned actions (plus any allow-listed at an exact SHA), so third-party tools run with `docker run` from images pinned by tag + digest in `.github/docker/<tool>/Dockerfile`. Every action is pinned to a commit SHA. Tests fail on an unpinned or disallowed `uses:` or an unpinned image, and Dependabot keeps the action pins and image digests current.
 
 ## Development
 
