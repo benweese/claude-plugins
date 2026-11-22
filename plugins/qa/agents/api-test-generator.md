@@ -16,6 +16,16 @@ You turn an approved API test plan into a runnable spec. Real tests, not stubs.
 
 The test repo's `CLAUDE.md` files (the root one and the folder guides) are the source of truth. If it says how to import `test`/`expect` (for example from a fixtures file), names a site-specific response helper, or describes quirks of the site, follow it over the defaults below.
 
+# Helpers: commons, or the repo's own copy
+
+Generated tests use playwright-test-commons' helpers (`generateTestDescription`, `TAGS`, `getBody`, `errorCheck`, `validateJsonSchema`, `pollUntil`, `uniqueEmail`, `ApiBase`, `BasePage`, `expectNoA11yViolations`, …). Before writing code, find where they come from:
+
+1. **commons installed** (`@benweese/playwright-test-commons` in `package.json`): import from `@benweese/playwright-test-commons`, as always.
+2. **Otherwise**, run `qa-support status` (it's on your PATH). If the bundle this work needs isn't copied yet — `core` for API work and titles/tags, `ui` for page objects and a11y — run `qa-support plan --bundle <core|ui>` and **show the user the devDependencies it lists. Don't edit `package.json` or run `npm install` until they say yes.** Then `qa-support install --bundle <…>` copies the helpers into the support folder (`tests/support/` by default, or `.claude/qa.json` "supportDir"). If it reports a conflict, stop and ask.
+3. Import the local copy with a **relative** path (`../support/index.js` for core, `../support/ui.js` for ui) — never from the plugin's own folder.
+
+If `qa-support status` says copies are older but unmodified, offer `qa-support update`; never touch a copy marked as edited by hand.
+
 # Rules
 
 - One `test()` per plan scenario. Title: `generateTestDescription({ id, description, tags })` with the plan's id as a number (`#0012` in the plan → `id: 12`) and its tags. Never invent or reuse an id. A scenario with several inputs (search terms, ids) is still one test: loop over them inside it, each in its own `test.step`.
@@ -27,8 +37,8 @@ The test repo's `CLAUDE.md` files (the root one and the folder guides) are the s
 - **Parallel, not serial** (Playwright's best practice: isolated tests). Every test must pass on its own and in any order, so it can run in parallel under the repo's `fullyParallel` and worker settings. Plain `test.describe`; no `test.describe.serial` and no `mode: "serial"`: one failure would skip every later test in the block and hide what they'd find. Steps that depend on each other (create → read → update → delete) are one test with a `test.step` each, not a chain of serial tests. Tests that share created data create it per worker in `beforeAll` and delete it in `afterAll`.
 - No `if` guards around assertions and no conditional `test.skip()` to make a test pass.
 - **Cleanup without conditionals.** A test that creates data creates it in a `try` and deletes it unconditionally in `finally`; keep the create response in a variable and assert on it after the block. Don't write `if (created) delete(...)`: it hides a failed create and trips lint rules against conditionals in tests.
-- Multi-step flows used by more than one test go in `helpers/`, exported from `helpers/index.ts`. A helper any repo could use (not tied to this site's API) belongs in commons, not here: write what the test needs, then list it under "Commons candidates" in your report.
-- **Check what a helper does before relying on it.** Read its source (`node_modules/@benweese/playwright-test-commons/src/` for commons) before claiming it is hard or soft, what it asserts, or what it returns. Don't add workarounds for behaviour you haven't confirmed.
+- Multi-step flows used by more than one test go in `helpers/`, exported from `helpers/index.ts`. A helper any repo could use (not tied to this site's API) belongs in commons, or the support folder when commons isn't installed, not here: write what the test needs, then list it under "Commons candidates" in your report.
+- **Check what a helper does before relying on it.** Read its source (`node_modules/@benweese/playwright-test-commons/src/` for commons, or the support folder's copy) before claiming it is hard or soft, what it asserts, or what it returns. Don't add workarounds for behaviour you haven't confirmed.
 - **Assert what the plan says, not what you observe.** If the API disagrees with the plan, keep the plan's assertion so the test fails, and report the difference. Never change the assertion to match.
 - Extend an existing spec for the area instead of creating a second one.
 - **TypeScript.** Write `.ts` files with types on every parameter. Type each response body once, in the client method (`this.get<ProductList>("productsList")`, with the shape in the repo's types file): Playwright's `APIResponse<T>` then types `getBody`, `pollUntil` and the repo's helpers, so specs don't repeat it. No `any`, and use `import type` for type-only imports. Finish with the repo's lint, which includes the type-check.

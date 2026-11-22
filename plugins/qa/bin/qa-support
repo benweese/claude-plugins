@@ -1,0 +1,191 @@
+#!/usr/bin/env node
+// qa-support: copies playwright-test-commons' helpers into a test repo that doesn't install commons.
+//   qa-support status                   commons installed? which helper copies exist, current / older / edited
+//   qa-support plan    --bundle core,ui what install would copy, conflicts, and the devDependencies to add
+//   qa-support install --bundle core,ui copy the missing files (never overwrites; never edits package.json)
+//   qa-support update                   refresh unmodified older copies; edited copies are left alone
+// Options: --dir <supportDir> (default: .claude/qa.json "supportDir", else tests/support). Runs in the repo root.
+// TypeScript sources when the repo has a tsconfig.json, else commons' compiled .js + .d.ts. Each copied file
+// starts with a header naming the commons tag and the file's hash, so later runs can tell edited copies apart.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "templates", "commons");
+const COMMONS = "@benweese/playwright-test-commons";
+const HEADER = /^\/\/ qa-support: (\S+) (\S+) · (\S+) · sha256:([0-9a-f]{64})\n\/\/ .*\n/;
+const sha256 = (t) => createHash("sha256").update(t).digest("hex");
+
+export const manifest = () => JSON.parse(readFileSync(path.join(TEMPLATES, "manifest.json"), "utf8"));
+
+function readJson(file) {
+	try {
+		return JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+/** Repo facts: commons installed?, language, support folder. */
+export function repoInfo(root, dirFlag) {
+	const pkg = readJson(path.join(root, "package.json")) || {};
+	const commons = pkg.dependencies?.[COMMONS] ?? pkg.devDependencies?.[COMMONS] ?? null;
+	const qa = readJson(path.join(root, ".claude", "qa.json"));
+	const supportDir = dirFlag || (qa && qa.version === 1 && typeof qa.supportDir === "string" && qa.supportDir) || "tests/support";
+	return { pkg, commons, lang: existsSync(path.join(root, "tsconfig.json")) ? "ts" : "js", supportDir };
+}
+
+/** The header a copied file gets. */
+const header = (m, rel, body) => `// qa-support: ${m.source} ${m.tag} · ${rel} · sha256:${sha256(body)}\n// Copied by the qa plugin. Edit freely: an edited copy is never overwritten.\n`;
+
+/** State of one target file: missing | current | older (unmodified, update available) | edited | foreign (no header). */
+export function fileState(target, m) {
+	if (!existsSync(target)) return { state: "missing" };
+	const text = readFileSync(target, "utf8");
+	const h = HEADER.exec(text);
+	if (!h) return { state: "foreign" };
+	const body = text.slice(h[0].length);
+	if (sha256(body) !== h[4]) return { state: "edited", tag: h[2] };
+	return { state: h[2] === m.tag ? "current" : "older", tag: h[2] };
+}
+
+/** Template files for bundles in a language: [{rel (in templates), out (relative to supportDir)}]. */
+export function filesFor(m, bundles, lang) {
+	return Object.entries(m.files)
+		.filter(([rel, f]) => rel.startsWith(`${lang}/`) && bundles.includes(f.bundle))
+		.map(([rel]) => ({ rel, out: rel.slice(lang.length + 1) }));
+}
+
+/** Minimal semver: "1.2.3" → [1,2,3]. */
+const ver = (v) => (String(v).match(/\d+(?:\.\d+){0,2}/)?.[0] || "0").split(".").map(Number).concat([0, 0]).slice(0, 3);
+const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+
+/** Does an installed version satisfy "^x.y.z" or ">=x.y.z"? Returns ok | older | newer-major. */
+export function compat(installed, range) {
+	const v = ver(installed);
+	const min = ver(range);
+	if (cmp(v, min) < 0) return "older";
+	if (range.trim().startsWith("^")) {
+		const sameMajor = min[0] === 0 ? v[0] === 0 && v[1] === min[1] : v[0] === min[0];
+		if (!sameMajor) return "newer-major";
+	}
+	return "ok";
+}
+
+/** devDependencies the bundles need vs what the repo has. */
+export function depPlan(root, info, bundles, m) {
+	const need = {};
+	for (const b of bundles) Object.assign(need, m.bundles[b].devDependencies);
+	if (info.lang === "ts") Object.assign(need, m.typescriptDevDependencies || {}); // the TS sources use Node's types
+	const rows = [];
+	for (const [name, range] of Object.entries(need)) {
+		const declared = info.pkg.dependencies?.[name] ?? info.pkg.devDependencies?.[name] ?? null;
+		const installed = readJson(path.join(root, "node_modules", name, "package.json"))?.version ?? (declared ? ver(declared).join(".") : null);
+		if (!installed) rows.push({ name, range, action: "add" });
+		else {
+			const c = compat(installed, range);
+			rows.push({ name, range, installed, action: c === "ok" ? "skip" : c === "older" ? "upgrade" : "keep (newer than commons was built for — check it works)" });
+		}
+	}
+	return rows;
+}
+
+function parseBundles(arg) {
+	const b = String(arg || "").split(",").map((s) => s.trim()).filter(Boolean);
+	if (!b.length || b.some((x) => !["core", "ui"].includes(x))) throw new Error("--bundle must be core, ui or core,ui");
+	return b;
+}
+
+/** Plan an install: files to copy, conflicts, deps. */
+export function plan(root, bundles, dirFlag) {
+	const m = manifest();
+	const info = repoInfo(root, dirFlag);
+	if (info.commons) return { commons: info.commons, lines: [`${COMMONS} is installed (${info.commons}) — tests import it directly; nothing to copy.`] };
+	const files = filesFor(m, bundles, info.lang).map((f) => ({ ...f, ...fileState(path.join(root, info.supportDir, f.out), m) }));
+	const deps = depPlan(root, info, bundles, m);
+	const lines = [`Helpers from ${m.source} ${m.tag} → ${info.supportDir}/ (${info.lang === "ts" ? "TypeScript sources" : "compiled JavaScript + .d.ts (no tsconfig.json)"}), bundles: ${bundles.join(" + ")}.`];
+	const by = (s) => files.filter((f) => f.state === s).map((f) => f.out);
+	if (by("missing").length) lines.push(`Would copy: ${by("missing").join(", ")}`);
+	if (by("current").length) lines.push(`Already current: ${by("current").join(", ")}`);
+	if (by("older").length) lines.push(`Older unmodified copies (run qa-support update): ${by("older").join(", ")}`);
+	if (by("edited").length) lines.push(`Edited by hand (left alone): ${by("edited").join(", ")}`);
+	if (by("foreign").length) lines.push(`CONFLICT — files already there that qa-support didn't write: ${by("foreign").join(", ")}. Nothing will be copied until the user decides.`);
+	const add = deps.filter((d) => d.action === "add" || d.action === "upgrade");
+	lines.push("devDependencies (package.json is NOT edited — ask the user first):");
+	for (const d of deps) lines.push(`  ${d.name} ${d.range}: ${d.action}${d.installed ? ` (installed ${d.installed})` : ""}`);
+	if (add.length) lines.push(`  If the user says yes: npm install --save-dev ${add.map((d) => `"${d.name}@${d.range}"`).join(" ")}`);
+	if (info.lang === "ts") lines.push("TypeScript: the helpers use Node's types — keep @types/node installed and, on TypeScript 6+, \"types\": [\"node\"] in tsconfig.json. If tsc reports two Page types, run npm dedupe (two playwright-core copies).");
+	return { files, deps, conflict: by("foreign").length > 0, lines, info, m };
+}
+
+/** Copy the missing files (stops on a conflict). */
+export function install(root, bundles, dirFlag) {
+	const p = plan(root, bundles, dirFlag);
+	if (p.commons) return { ok: true, lines: p.lines };
+	if (p.conflict) return { ok: false, lines: p.lines };
+	const copied = [];
+	for (const f of p.files.filter((x) => x.state === "missing")) {
+		const body = readFileSync(path.join(TEMPLATES, f.rel), "utf8");
+		const target = path.join(root, p.info.supportDir, f.out);
+		mkdirSync(path.dirname(target), { recursive: true });
+		writeFileSync(target, header(p.m, f.rel, body) + body);
+		copied.push(f.out);
+	}
+	return { ok: true, lines: [copied.length ? `Copied ${copied.length} file(s) into ${p.info.supportDir}/: ${copied.join(", ")}` : "Nothing to copy.", ...p.lines.slice(1).filter((l) => !l.startsWith("Would copy"))] };
+}
+
+/** Refresh unmodified older copies. */
+export function update(root, dirFlag) {
+	const m = manifest();
+	const info = repoInfo(root, dirFlag);
+	if (info.commons) return { ok: true, lines: [`${COMMONS} is installed — nothing to update here.`] };
+	const updated = [];
+	const edited = [];
+	for (const lang of ["ts", "js"]) {
+		for (const f of filesFor(m, ["core", "ui"], lang)) {
+			const target = path.join(root, info.supportDir, f.out);
+			const s = fileState(target, m);
+			if (s.state === "older") {
+				const body = readFileSync(path.join(TEMPLATES, f.rel), "utf8");
+				writeFileSync(target, header(m, f.rel, body) + body);
+				updated.push(`${f.out} (${s.tag} → ${m.tag})`);
+			} else if (s.state === "edited") edited.push(f.out);
+		}
+	}
+	return { ok: true, lines: [updated.length ? `Updated: ${updated.join(", ")}` : "No older unmodified copies.", ...(edited.length ? [`Left alone (edited by hand): ${[...new Set(edited)].join(", ")}`] : [])] };
+}
+
+/** Status of the repo's helper copies. */
+export function status(root, dirFlag) {
+	const m = manifest();
+	const info = repoInfo(root, dirFlag);
+	if (info.commons) return { ok: true, lines: [`${COMMONS} is installed (${info.commons}) — import helpers from it; nothing is copied.`] };
+	const rows = [];
+	for (const b of ["core", "ui"]) {
+		const states = filesFor(m, [b], info.lang).map((f) => fileState(path.join(root, info.supportDir, f.out), m).state);
+		const present = states.filter((s) => s !== "missing").length;
+		rows.push(`${b}: ${present ? `${present}/${states.length} files (${[...new Set(states)].join(", ")})` : "not copied"}`);
+	}
+	return { ok: true, lines: [`${COMMONS} isn't installed. Helper copies in ${info.supportDir}/ (templates: ${m.tag}, ${info.lang}):`, ...rows.map((r) => `  ${r}`)] };
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	const args = process.argv.slice(2);
+	const flag = (n) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
+	const root = process.cwd();
+	try {
+		const cmd = args[0];
+		const r = cmd === "status" ? status(root, flag("--dir"))
+			: cmd === "plan" ? { ok: !plan(root, parseBundles(flag("--bundle")), flag("--dir")).conflict, lines: plan(root, parseBundles(flag("--bundle")), flag("--dir")).lines }
+			: cmd === "install" ? install(root, parseBundles(flag("--bundle")), flag("--dir"))
+			: cmd === "update" ? update(root, flag("--dir"))
+			: null;
+		if (!r) throw new Error("usage: qa-support status | plan --bundle core,ui | install --bundle core,ui | update  [--dir <supportDir>]");
+		console.log(r.lines.join("\n"));
+		process.exit(r.ok ? 0 : 1);
+	} catch (e) {
+		console.error(e.message);
+		process.exit(2);
+	}
+}

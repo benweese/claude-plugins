@@ -1,0 +1,173 @@
+{
+	"source": "@benweese/playwright-test-commons",
+	"tag": "v0.8.0",
+	"version": "0.8.0",
+	"bundles": {
+		"core": {
+			"entry": "index",
+			"devDependencies": {
+				"@playwright/test": ">=1.65.0",
+				"ajv": "^8.20.0",
+				"ajv-formats": "^3.0.1",
+				"dayjs": "^1.11.23",
+				"genson-js": "^0.0.8"
+			}
+		},
+		"ui": {
+			"entry": "ui",
+			"devDependencies": {
+				"@playwright/test": ">=1.65.0",
+				"@axe-core/playwright": ">=4.10.0"
+			}
+		}
+	},
+	"typescriptDevDependencies": {
+		"@types/node": "^26.6.6"
+	},
+	"files": {
+		"js/api/ApiBase.d.ts": {
+			"bundle": "core",
+			"sha256": "42c5002faac3750c466267b78dea423127af5f98bf57c0ad98b8726a87b4f191"
+		},
+		"js/api/ApiBase.js": {
+			"bundle": "core",
+			"sha256": "49388dd4f11c601c6420cea443308ad28285a2d25496ee01009ebd84f17e4765"
+		},
+		"js/helpers/email.d.ts": {
+			"bundle": "core",
+			"sha256": "dea9b4a7619d1ae68ae9bfa62a727b0ae30d5567b83d30240aac272f5c919c71"
+		},
+		"js/helpers/email.js": {
+			"bundle": "core",
+			"sha256": "fc0ce324bd00a3adc995d9fa40cf2fde62cc3c2440306b1b4b83af9f6f11d7ad"
+		},
+		"js/helpers/polling.d.ts": {
+			"bundle": "core",
+			"sha256": "ec01c288f95a96d629d04f5bb7152e698c1312a32897061cd468cd5320b59aaf"
+		},
+		"js/helpers/polling.js": {
+			"bundle": "core",
+			"sha256": "2d249804e758e81c49cb14f1b5677b5e8f23a90d7f36d25ae697891e38164e05"
+		},
+		"js/helpers/response.d.ts": {
+			"bundle": "core",
+			"sha256": "fe27687c79c493294a0e86328ea052f024f85886b1a5bb851b9ce4fd469d92bf"
+		},
+		"js/helpers/response.js": {
+			"bundle": "core",
+			"sha256": "2477bb1f7a65408423036114962c7e0fc5dfed5450cfee7f18b7935b7af11b03"
+		},
+		"js/helpers/testDescription.d.ts": {
+			"bundle": "core",
+			"sha256": "633551e9da3fea0a214334f2cfc92f0cd76c23eef1d7468b92c8245de77f14dc"
+		},
+		"js/helpers/testDescription.js": {
+			"bundle": "core",
+			"sha256": "fb8b8fd881b16ccb2fcccd77c967f7c186ed0a6583821e8ee62e28c4ae90e755"
+		},
+		"js/index.d.ts": {
+			"bundle": "core",
+			"sha256": "871b6fc14b1ee008c2c01cb8b18d47af934cde8a9634fc5c00c47364c9797455"
+		},
+		"js/index.js": {
+			"bundle": "core",
+			"sha256": "d59ad0f2f5014db86645a3d2acae6879c69b76962a9a2f81f5bf15f0c5d9ab49"
+		},
+		"js/ui.d.ts": {
+			"bundle": "ui",
+			"sha256": "950236d4cc02587418fbef9d21ced42d89c4218145c3bfb3ccdf796cf1f2cad5"
+		},
+		"js/ui.js": {
+			"bundle": "ui",
+			"sha256": "780c8d35e1031b6f3d64eaae78da5c319f27f07beff17e0439f37a4245023d7b"
+		},
+		"js/ui/BasePage.d.ts": {
+			"bundle": "ui",
+			"sha256": "8fd59190c19f1ba4ea86b2314620d8c2cc947e98dcf10c005bd437e26ff08903"
+		},
+		"js/ui/BasePage.js": {
+			"bundle": "ui",
+			"sha256": "3aaa3ccff8b7f5b779372c4e355bc543534e3be11a0650da4407749a62fc3a04"
+		},
+		"js/ui/accessibility.d.ts": {
+			"bundle": "ui",
+			"sha256": "5d7de6e844be45473e786cff32506c7969d8197543fdf010b71f9de32bcdaaf6"
+		},
+		"js/ui/accessibility.js": {
+			"bundle": "ui",
+			"sha256": "ba6617883785e61489e18057d31f7c2a0f3faaa1e173900d3cb7891085b19ba6"
+		},
+		"js/validation/createJsonSchema.d.ts": {
+			"bundle": "core",
+			"sha256": "442e8cd1839d44afec027a7ec6000eb04963391b77397283335d32e7aa0cc616"
+		},
+		"js/validation/createJsonSchema.js": {
+			"bundle": "core",
+			"sha256": "8f7cbca51a11f18bfccd4a5569c6da6567ec18eb050fb06ca928d0e015cb408a"
+		},
+		"js/validation/validateDates.d.ts": {
+			"bundle": "core",
+			"sha256": "b74fb5d56557fbe60a22628431d00bd16ff59cf305ee5d482cfddd7d90e8085b"
+		},
+		"js/validation/validateDates.js": {
+			"bundle": "core",
+			"sha256": "3e351a0fb349f004b2dc85463bf6e0361fd0ea308e28e89abd062f53fdf1c2d3"
+		},
+		"js/validation/validateJsonSchema.d.ts": {
+			"bundle": "core",
+			"sha256": "06708053c84170695c08425bfad576b0301bd598d0d68339e68e2db5b31edcac"
+		},
+		"js/validation/validateJsonSchema.js": {
+			"bundle": "core",
+			"sha256": "7772c9898052650f6052065267dd5ca87bb499d3c2dbdf85d1684c1c29dc4e9c"
+		},
+		"ts/api/ApiBase.ts": {
+			"bundle": "core",
+			"sha256": "9abd3fb9962bf8e6eb1c22ced05d19383fbb5ea37eca9c98abca172e327a7978"
+		},
+		"ts/helpers/email.ts": {
+			"bundle": "core",
+			"sha256": "e71761c79ace07427f3a078732dcc08f509514e76250242453d6924293a62e36"
+		},
+		"ts/helpers/polling.ts": {
+			"bundle": "core",
+			"sha256": "df0c73d50726506384fcb6982713969d7603d5a30054c62eb5623fcde2f23155"
+		},
+		"ts/helpers/response.ts": {
+			"bundle": "core",
+			"sha256": "18b98a915095f85503700056579f231df5779625628b5d4cfa63f5dfa009f0c3"
+		},
+		"ts/helpers/testDescription.ts": {
+			"bundle": "core",
+			"sha256": "aa75492ef228b591767e2eb51a1827768a0c572625bc91c96231074511f79a76"
+		},
+		"ts/index.ts": {
+			"bundle": "core",
+			"sha256": "0912dd76c64289940050e1db2750a487e7cd56260e46d2f392d88abf647f6877"
+		},
+		"ts/ui.ts": {
+			"bundle": "ui",
+			"sha256": "8c49452486a0dcba712e0e2e3c3e850ac5cd21699459e7511d7823acb4241b9b"
+		},
+		"ts/ui/BasePage.ts": {
+			"bundle": "ui",
+			"sha256": "00eba5ce68ec4063b32ac9ce365f4af9e61fbaac4710a4c54e128931559a82cf"
+		},
+		"ts/ui/accessibility.ts": {
+			"bundle": "ui",
+			"sha256": "0b6512d8abf85b4c0af2e36a0c77ddcdbc261012dfd2fba422440988f43bc3ce"
+		},
+		"ts/validation/createJsonSchema.ts": {
+			"bundle": "core",
+			"sha256": "53756972e9909ee2d9f8ad957272d8f9c4cd448713d713f4605385ec14192f56"
+		},
+		"ts/validation/validateDates.ts": {
+			"bundle": "core",
+			"sha256": "fd32bcbc8b6bc2e98a1b1cba1e53b8484e0fda76a8e2b478f9761cb06abaf8fd"
+		},
+		"ts/validation/validateJsonSchema.ts": {
+			"bundle": "core",
+			"sha256": "6f92e0cdd8076ea2578eaafbc9575812e324f74c08ab49d01b66778684d28e1c"
+		}
+	}
+}

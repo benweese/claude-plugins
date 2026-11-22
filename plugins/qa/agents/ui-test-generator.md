@@ -19,7 +19,7 @@ The test repo's `CLAUDE.md` files (the root one and the folder guides) are the s
 # Files
 
 - `tests/ui/locators/<name>Locators.ts`: `export const <name>Locators = (page: Page) => ({ ... })`, plus `export type <Name>Locators = ReturnType<typeof <name>Locators>`.
-- `tests/ui/pages/<Name>Page.ts`: `extends BasePage<<Name>Locators>` from `@benweese/playwright-test-commons`, passes the locator factory to `super`, one typed method per user action.
+- `tests/ui/pages/<Name>Page.ts`: `extends BasePage<<Name>Locators>` from `@benweese/playwright-test-commons` (or the support folder's `ui` copy, see below), passes the locator factory to `super`, one typed method per user action.
 - `tests/ui/specs/<name>.spec.ts`: `test.describe` per plan group, one test per scenario, titles from `generateTestDescription({ id, description, tags })`, with the plan's id as a number (`#0012` in the plan → `id: 12`) and its tags. Never invent or reuse an id.
 - `tests/ui/data/<name>Data.ts`: generated input with `@faker-js/faker`, only if needed.
 
@@ -39,11 +39,21 @@ The repo's `tests/ui/CLAUDE.md` defines what is allowed and wins over this list;
   ```
 - If the allowed methods can't find it, use your best allowed locator with a `// Fixme:` comment above it saying what you tried and what the site needs. The test is still written.
 
+# Helpers: commons, or the repo's own copy
+
+Generated tests use playwright-test-commons' helpers (`generateTestDescription`, `TAGS`, `getBody`, `errorCheck`, `validateJsonSchema`, `pollUntil`, `uniqueEmail`, `ApiBase`, `BasePage`, `expectNoA11yViolations`, …). Before writing code, find where they come from:
+
+1. **commons installed** (`@benweese/playwright-test-commons` in `package.json`): import from `@benweese/playwright-test-commons`, as always.
+2. **Otherwise**, run `qa-support status` (it's on your PATH). If the bundle this work needs isn't copied yet — `core` for API work and titles/tags, `ui` for page objects and a11y — run `qa-support plan --bundle <core|ui>` and **show the user the devDependencies it lists. Don't edit `package.json` or run `npm install` until they say yes.** Then `qa-support install --bundle <…>` copies the helpers into the support folder (`tests/support/` by default, or `.claude/qa.json` "supportDir"). If it reports a conflict, stop and ask.
+3. Import the local copy with a **relative** path (`../support/index.js` for core, `../support/ui.js` for ui) — never from the plugin's own folder.
+
+If `qa-support status` says copies are older but unmodified, offer `qa-support update`; never touch a copy marked as edited by hand.
+
 # Rules
 
 - Specs call page methods only; no raw locators in specs.
 - Page objects use `BasePage` methods, not raw Playwright: `goto`, `reload`, `click`, `fill`, `selectOption`, `uploadFiles`, `waitForLoad`, `clickAndWaitForResponse`, `clickAndHandleDialog`, `recordDialogs`, and the soft checks `expectVisible`, `expectHidden`, `expectCount`, `expectAny`, `expectValue`, `expectInvalid`, `expectFilesAttached`, `expectText`, `expectUrl`, `expectTitle` (pass `{ soft: false }` when later steps depend on a check, or a `timeout` for something known to be slow). Check the installed version's `BasePage` for the current list. Accessibility scans use commons' `expectNoA11yViolations(page)`.
-- **No generic helper files in the test repo.** A helper every page could use belongs in `BasePage` (in commons), which you can't release from here: put what the test needs on the page object, and list it under "Commons candidates" in your report. Page-specific behaviour stays on the page object.
+- **No generic helper files in the test repo.** A helper every page could use belongs in `BasePage` (in commons, or the support folder when commons isn't installed), which you can't change from here: put what the test needs on the page object, and list it under "Commons candidates" in your report. Page-specific behaviour stays on the page object.
 - Navigate with `this.goto("/path")`; never a full URL.
 - `expect.soft` for checks; no `waitForTimeout`, no `networkidle`.
 - **Parallel, not serial** (Playwright's best practice: isolated tests). Every test must pass on its own and in any order, so it can run in parallel under the repo's `fullyParallel` and worker settings. Plain `test.describe`; no `test.describe.serial` and no `mode: "serial"`: one failure would skip every later test in the block and hide what they'd find. A journey whose steps depend on each other (cart → checkout → payment) is one test with a `test.step` per stage, not a chain of serial tests. Data several tests need (an account, a product in the cart) is created per worker in `beforeAll` or a worker fixture, through the API where the repo has a client, and deleted in `afterAll`; data one test needs is created in that test.
