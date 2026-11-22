@@ -1,6 +1,6 @@
 {
 	"name": "benweese",
-	"description": "Ben Weese's Claude Code plugins: Playwright test automation, docs, repo workflow, guardrails and privacy.",
+	"description": "Ben Weese's Claude Code plugins: Playwright test automation, docs, repo workflow, guardrails, privacy and accessibility.",
 	"owner": {
 		"name": "Ben Weese",
 		"url": "https://github.com/benweese"
@@ -40,6 +40,13 @@
 			"description": "/privacy-scan, a privacy-reviewer agent and an opt-in commit blocker for personal data.",
 			"version": "0.1.0",
 			"category": "security"
+		},
+		{
+			"name": "accessibility",
+			"source": "./plugins/accessibility",
+			"description": "Helps Claude build accessible UI: /a11y (axe scan with plain-English fixes), an a11y-reviewer agent and a contrast calculator.",
+			"version": "0.1.0",
+			"category": "accessibility"
 		}
 	]
 }

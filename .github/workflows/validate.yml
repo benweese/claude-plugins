@@ -39,5 +39,12 @@ jobs:
         run: |
           node scripts/sync-commons-templates.mjs
           git diff --exit-code -- plugins/qa/templates || { echo "::error::plugins/qa/templates differ from the pinned commons tag — run: node scripts/sync-commons-templates.mjs"; exit 1; }
+      - name: Real accessibility scan (axe in a temporary node_modules)
+        run: |
+          mkdir -p "$RUNNER_TEMP/a11y" && cd "$RUNNER_TEMP/a11y"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund @playwright/test @axe-core/playwright
+          npx playwright install --with-deps chromium
+          echo "A11Y_NODE_MODULES=$RUNNER_TEMP/a11y/node_modules" >> "$GITHUB_ENV"
       - name: Hook tests + sample app smoke tests
         run: node --test plugins/*/test/*.test.mjs test/*.test.mjs examples/sample-app/server.test.mjs

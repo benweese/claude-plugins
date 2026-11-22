@@ -1,0 +1,19 @@
+{
+	"name": "accessibility",
+	"version": "0.1.0",
+	"description": "Helps Claude build accessible UI: /a11y (a one-off axe scan with plain-English fixes, using the project's own Playwright), an a11y-reviewer agent for what scanners miss, and a contrast calculator. WCAG 2.2 AA by default.",
+	"author": {
+		"name": "Ben Weese",
+		"url": "https://benweese.com"
+	},
+	"homepage": "https://github.com/benweese/playwright-ai-qa-agents/tree/main/plugins/accessibility",
+	"repository": "https://github.com/benweese/playwright-ai-qa-agents",
+	"license": "MIT",
+	"keywords": [
+		"accessibility",
+		"a11y",
+		"wcag",
+		"axe",
+		"contrast"
+	]
+}

@@ -2,7 +2,7 @@
 //
 //   node examples/sample-app/server.mjs [port]      (default 4321, or PORT)
 //
-// Pages: /  (the list + an "Add a book" form).  API: GET /api/books, POST /api/books {title, author},
+// Pages: /  (the list + an "Add a book" form), /a11y-broken (accessibility fixture: broken on purpose).  API: GET /api/books, POST /api/books {title, author},
 // GET /api/books/:id, DELETE /api/books/:id. Data is in memory and resets on restart. All data is made up.
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -69,6 +69,9 @@ export function createApp(store = createStore()) {
 		const match = /^\/api\/books(?:\/(\d+))?$/.exec(url.pathname);
 		if (url.pathname === "/" && req.method === "GET") {
 			return send(res, 200, await readFile(path.join(here, "public", "index.html"), "utf8"), "text/html; charset=utf-8");
+		}
+		if (url.pathname === "/a11y-broken" && req.method === "GET") {
+			return send(res, 200, await readFile(path.join(here, "public", "a11y-broken.html"), "utf8"), "text/html; charset=utf-8");
 		}
 		if (!match) return send(res, 404, { error: "Not found" });
 		const id = match[1] ? Number(match[1]) : null;

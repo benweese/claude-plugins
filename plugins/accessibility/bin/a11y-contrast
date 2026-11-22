@@ -1,0 +1,33 @@
+#!/usr/bin/env node
+// a11y-contrast <foreground> <background> [AA|AAA]
+// Prints the WCAG contrast ratio of two colors (#rgb, #rrggbb or rgb(r, g, b)) and whether it passes for
+// normal text, large text and UI components / graphics. Exit 0 = passes for normal text, 1 = doesn't, 2 = bad input.
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { contrastRatio, contrastVerdict, parseColor } from "../scripts/lib.mjs";
+
+export function contrastReport(fg, bg, level = "AA") {
+	const a = parseColor(fg);
+	const b = parseColor(bg);
+	if (!a || !b) return { code: 2, text: `Couldn't read ${!a ? fg : bg} as a color — use #rgb, #rrggbb or rgb(r, g, b).` };
+	const ratio = contrastRatio(a, b);
+	const v = contrastVerdict(ratio, level);
+	const mark = (ok) => (ok ? "pass" : "FAIL");
+	const lvl = level === "AAA" ? "AAA" : "AA";
+	return {
+		code: v.text ? 0 : 1,
+		ratio,
+		text: `${fg} on ${bg}: ${ratio.toFixed(2)}:1 (WCAG ${lvl})\n  normal text (needs ${lvl === "AAA" ? "7" : "4.5"}:1): ${mark(v.text)}\n  large text (needs ${lvl === "AAA" ? "4.5" : "3"}:1): ${mark(v.largeText)}\n  UI components and graphics (needs 3:1): ${mark(v.uiAndGraphics)}`
+	};
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	const [fg, bg, level] = process.argv.slice(2);
+	if (!fg || !bg) {
+		console.log("usage: a11y-contrast <foreground> <background> [AA|AAA]");
+		process.exit(2);
+	}
+	const r = contrastReport(fg, bg, (level || "AA").toUpperCase());
+	console.log(r.text);
+	process.exit(r.code);
+}
