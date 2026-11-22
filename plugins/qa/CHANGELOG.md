@@ -2,6 +2,16 @@
 
 All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
 
+## [1.3.0] - 2026-11-22
+
+### Added
+
+- **`/review-tests`** and the **`test-reviewer`** agent: checks the tests against the **original request** saved in `.claude/qa/requirements.md` — the only source of truth (a plan is used only to map ids; every plan-vs-request difference is a finding). Fresh context; numbered requirement items (ambiguous ones get a question), gaps and partial coverage, extras labelled useful-keep / scope creep / wrong, weak tests that wouldn't fail if the feature broke. Decisions first, then the requirement → test table. **Report only.**
+- **`qa-requirements`** (on Claude's PATH): saves the request verbatim at the start of a task — from the chat, a GitHub issue (`gh`) or a file — with its source, git branch and date. The file format is the contract, so another plugin can add a source by writing it. A different branch or request is a new task. Warns on every run if the file isn't gitignored.
+- `author-tests` saves the request first (restating it for a yes when nothing is written down) and runs `/review-tests` once the suite is green.
+- **Auto-review safety net** (opt-in, `.claude/qa.json` `"hooks": { "autoReview": true }`): a `PostToolUse` hook that, after a green test run (not `--list`, `--help`, `show-report`, `codegen`, …), asks for `/review-tests` — once per green run, only when the test files changed, at most 2 per task, then only on request.
+- Sample-app fixture `fixtures/review-tests/`: a request, a drifted plan and a spec with a planted gap, partial coverage, weak test and scope creep.
+
 ## [1.2.0] - 2026-11-21
 
 ### Added

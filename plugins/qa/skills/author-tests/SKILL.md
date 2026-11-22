@@ -10,6 +10,17 @@ Input: $ARGUMENTS
 
 If there's no input, ask what feature, page or endpoint to test.
 
+## 0. Save the original request
+
+Before anything else, save the request **verbatim**, so a long session can't compress it away — it's what
+`/review-tests` checks the tests against later:
+
+- a requirements file → `qa-requirements save file <path>`; a GitHub issue → `qa-requirements save issue <n>`;
+- otherwise the user's own words → `qa-requirements save chat`, with the request on stdin, word for word.
+
+If the request has no written requirement (e.g. "go test this page"), restate it as a numbered list of requirements,
+get the user's **yes**, then save that list. Pass on any warning `qa-requirements` prints.
+
 ```
 description → (page-mapper, UI only) → planner → HUMAN REVIEW → generator → run and review → (healer, UI only)
 ```
@@ -62,7 +73,7 @@ Wait for approval. Apply their changes to the plan before going on.
 npx playwright test <spec path> --reporter=line
 ```
 
-Go through the results with the user. If the site doesn't match the plan, the test stays failing; don't change the assertion. Offer `/qa:bug-report`.
+When the suite is green for this task, run **`/review-tests`** (it checks the tests against the saved request in a fresh context; report only), then go through the results with the user. If the site doesn't match the plan, the test stays failing; don't change the assertion. Offer `/qa:bug-report`.
 
 ## 7. Heal (UI only, if needed)
 

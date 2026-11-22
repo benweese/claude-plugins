@@ -123,6 +123,7 @@ It maps the page, drafts `plans/<feature>.md` and **stops for your review**. Onc
 | `/qa:author-tests <feature>`           | The full flow above |
 | `/qa:run-spec <path \| project \| id>` | Run a spec, a project (`smoke`, `api`, `ui`) or one test by id (`12` or `#0012`), and summarize |
 | `/qa:bug-report <description>`         | Write a bug report to `bugs/`, using the test and plan if a test id is given |
+| `/qa:review-tests [issue <n> \| file <path>]` | Check the tests against the original request: gaps, scope creep, weak tests (report only) |
 | `/qa:playwright-cli`                   | Playwright's own skill for driving a browser with `playwright-cli`, used by the page-mapper, UI generator and healer (see below) |
 
 Lint (`/workflow:check`) and docs upkeep (`/docs:update-docs`) are in the [workflow](../workflow/README.md) and [docs](../docs/README.md) plugins.
@@ -144,6 +145,36 @@ It uses only the project's `node_modules/.bin` tools and never downloads anythin
 ```
 
 A missing or invalid file means off.
+
+## Review tests against the original request
+
+`/review-tests` checks the tests for the current task against **what was actually asked**, not a summary of it:
+
+1. **The request is saved at the start** (`author-tests` does it; or `qa-requirements save chat|issue <n>|file <path>`) in `.claude/qa/requirements.md`, verbatim, with its source, git branch and date. **Gitignore `.claude/qa/`** — you're warned on every run until you do.
+2. The **test-reviewer** agent reads only that file and the tests, in a fresh context. The plan is used to map scenario ids, never as the requirement — a difference between plan and request is reported.
+3. It reports **decisions first** (add / cut / fix / ask), then requirement → test → status (covered / partial / gap / ambiguous), extras (useful-keep / scope creep / wrong) and weak tests (ones that wouldn't fail if the feature broke). It never changes a test.
+
+No written requirement ("go test this page")? Claude restates it as a numbered list and waits for your yes first. Two sources that disagree? It asks which one wins.
+
+**Requirement sources** are swappable: chat, GitHub issue and file are built in. The file format is the contract — another plugin adds a source (a tracker, say) by writing `.claude/qa/requirements.md` in the same format:
+
+```
+<!-- qa-requirements v1 -->
+source: <name>
+ref: <id or path>          (optional)
+branch: <git branch>
+saved: <ISO date>
+---
+<the request, verbatim>
+```
+
+**Auto-review (opt-in):** `author-tests` already runs the review when the suite goes green. As a safety net for green runs outside it, add `"autoReview": true` to `.claude/qa.json`:
+
+```json
+{ "version": 1, "hooks": { "lintAfterEdit": true, "autoReview": true } }
+```
+
+After a green test run (`playwright test`, `npm test`, … — not `--list`, `--help`, `show-report` or `codegen`), Claude is asked to run `/review-tests`: once per green run, only if the test files changed since the last review, at most twice per task (then only when you ask). A new request or a different branch starts a new task. Off by default.
 
 ## Guardrails
 
@@ -261,6 +292,8 @@ skills/author-tests/              the full authoring flow
 skills/run-spec/  skills/bug-report/
 skills/playwright-cli/            Playwright's skill, vendored (see above)
 hooks/hooks.json                  the opt-in test-file hook (PostToolUse)
+bin/qa-requirements               saves / shows the original request (.claude/qa/requirements.md)
+scripts/review-guard.mjs          the opt-in auto-review hook (PostToolUse on Bash)
 bin/qa-support                    copies commons' helpers into a repo without commons (status / plan / install / update)
 templates/commons/                those helpers (TypeScript + compiled JS), generated from one pinned commons tag
 scripts/test-file-check.mjs       what the hook runs; test/ has its node:test suite
