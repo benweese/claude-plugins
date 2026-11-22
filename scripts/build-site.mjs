@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPO = "benweese/playwright-ai-qa-agents";
+const REPO = "benweese/claude-plugins";
 const NAME = REPO.split("/")[1];
 const BASE = `https://code.benweese.com/${NAME}/`;
 const BLOB = `https://github.com/${REPO}/blob/main/`;

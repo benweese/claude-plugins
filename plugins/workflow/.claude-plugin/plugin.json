@@ -6,8 +6,8 @@
 		"name": "Ben Weese",
 		"url": "https://benweese.com"
 	},
-	"homepage": "https://github.com/benweese/playwright-ai-qa-agents/tree/main/plugins/workflow",
-	"repository": "https://github.com/benweese/playwright-ai-qa-agents",
+	"homepage": "https://github.com/benweese/claude-plugins/tree/main/plugins/workflow",
+	"repository": "https://github.com/benweese/claude-plugins",
 	"license": "MIT",
 	"keywords": [
 		"workflow",

@@ -61,4 +61,4 @@ Each plugin reads an optional file in the project's `.claude/` folder. Every fil
 
 ## Order
 
-Restructure (this) → qa hook, docs, workflow, guardrails, privacy, accessibility, and the qa additions → CI and docs site plumbing → rename the repo to `benweese/claude-plugins` (GitHub redirects the old URL) → migrate the repos that use these plugins → docs update.
+Done: restructure → qa hook, docs, workflow, guardrails, privacy, accessibility, and the qa additions → CI and docs site plumbing → rename the repo to `benweese/claude-plugins` (2026-11-22; GitHub redirects the old URL). Next: migrate the repos that use these plugins → docs update.

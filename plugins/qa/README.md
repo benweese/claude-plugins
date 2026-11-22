@@ -1,10 +1,10 @@
 # qa
 
-[![Validate plugin](https://github.com/benweese/playwright-ai-qa-agents/actions/workflows/validate.yml/badge.svg)](https://github.com/benweese/playwright-ai-qa-agents/actions/workflows/validate.yml)
+[![Validate plugin](https://github.com/benweese/claude-plugins/actions/workflows/validate.yml/badge.svg)](https://github.com/benweese/claude-plugins/actions/workflows/validate.yml)
 
 A [Claude Code](https://claude.com/claude-code) plugin, `qa` (from the [benweese marketplace](../../README.md)), that turns "test this feature" into reviewed, runnable Playwright tests in TypeScript. Agents plan the scenarios, stop for a human to review the plan, then write the API clients, page objects and specs, run them, and repair broken UI locators within a fixed budget.
 
-**[Docs site](https://code.benweese.com/playwright-ai-qa-agents/)** (this README, the worked example and the changelog)
+**[Docs site](https://code.benweese.com/claude-plugins/)** (this README, the worked example and the changelog)
 
 By **[Ben Weese](https://benweese.com/)** · more projects at **[code.benweese.com](https://code.benweese.com/)**
 
@@ -15,7 +15,7 @@ It is one of three repos that work together:
 | Repo                                                                           | Role                                                                                                |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
 | [playwright-test-commons](https://github.com/benweese/playwright-test-commons) | Shared framework code the generated tests use                                                       |
-| **playwright-ai-qa-agents** (this repo)                                        | The Claude Code plugin (`qa`, in the `benweese` marketplace)                                        |
+| **claude-plugins** (this repo)                                                 | The Claude Code plugin (`qa`, in the `benweese` marketplace)                                        |
 | [playwright-e2e-demo](https://github.com/benweese/playwright-e2e-demo)         | A real suite for [automationexercise.com](https://automationexercise.com), written with this plugin |
 
 ## The workflow
@@ -46,17 +46,17 @@ The plan opens with numbered acceptance criteria (`AC-1`, `AC-2`, ...), and each
 From a terminal, in the test repo (one step; Claude Code 2.1.275 or later):
 
 ```bash
-claude plugin install qa --marketplace benweese/playwright-ai-qa-agents
+claude plugin install qa --marketplace benweese/claude-plugins
 ```
 
 Or in two steps, which also works on older versions:
 
 ```bash
-claude plugin marketplace add benweese/playwright-ai-qa-agents
+claude plugin marketplace add benweese/claude-plugins
 claude plugin install qa@benweese
 ```
 
-Where your client has the `/plugin` command (the VS Code extension doesn't), `/plugin install qa --marketplace benweese/playwright-ai-qa-agents` does the same. Add `--scope project` to record it in the repo's `.claude/settings.json` for everyone who opens it. Recording it in `.claude/settings.json` alone didn't load it in the VS Code extension, only after the terminal install, so keep the terminal steps in the test repo's README.
+Where your client has the `/plugin` command (the VS Code extension doesn't), `/plugin install qa --marketplace benweese/claude-plugins` does the same. Add `--scope project` to record it in the repo's `.claude/settings.json` for everyone who opens it. Recording it in `.claude/settings.json` alone didn't load it in the VS Code extension, only after the terminal install, so keep the terminal steps in the test repo's README.
 
 **Plugins load when a session starts.** After installing, start a new Claude Code session before using the agents. In VS Code, run **Developer: Reload Window** from the command palette, or open a new Claude Code tab.
 

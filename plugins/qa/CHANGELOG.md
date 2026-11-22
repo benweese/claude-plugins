@@ -152,4 +152,4 @@ Fixes from building the [playwright-e2e-demo](https://github.com/benweese/playwr
 
 - First release: page-mapper, API and UI planners and generators, the UI healer, and the `author-tests`, `run-spec`, `check` and `bug-report` skills.
 
-[0.10.0]: https://github.com/benweese/playwright-ai-qa-agents/releases/tag/v0.10.0
+[0.10.0]: https://github.com/benweese/claude-plugins/releases/tag/v0.10.0
