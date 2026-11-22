@@ -1,6 +1,8 @@
-# Secret scanning on every push and PR. Personal account → no GITLEAKS_LICENSE needed.
-# Docs: https://github.com/gitleaks/gitleaks-action (README "Usage Example").
-# Third-party actions are pinned to commit SHAs; Dependabot (github-actions) keeps them current.
+# Secret scanning on every push and PR: the gitleaks CLI in a container, image pinned by digest in
+# .github/docker/gitleaks/Dockerfile (Dependabot keeps it current). The repo allows only GitHub-owned actions, so
+# this runs the official image with `docker run` instead of a third-party action. A leak fails the job; findings
+# are printed redacted in the log.
+# Docs: https://github.com/gitleaks/gitleaks#docker and `gitleaks git --help`.
 name: gitleaks
 
 on:
@@ -17,11 +19,13 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: write # comments on the PR line where a leak is found
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0 # the whole history
+          persist-credentials: false
+      - name: Scan the git history
+        run: |
+          image=$(sed -n 's/^FROM //p' .github/docker/gitleaks/Dockerfile)
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" "$image" \
+            git /repo --redact --no-banner --verbose --exit-code 1

@@ -21,7 +21,11 @@ Changes to the **`benweese` marketplace** itself: plugins added or removed, CI a
 
 ### Changed
 
-- Every action in every workflow is pinned to a commit SHA (Dependabot keeps them current); a test fails on any unpinned `uses:`. The actionlint Docker image is pinned by digest.
+- Every action in every workflow is pinned to a commit SHA (Dependabot keeps them current); a test fails on any unpinned `uses:`.
+
+### Fixed
+
+- gitleaks and actionlint didn't start: the repo allows only GitHub-owned actions. Both now run their official images with `docker run`, pinned by tag + digest in `.github/docker/<tool>/Dockerfile`; Dependabot's docker ecosystem keeps those current. Tests check that workflows match the Actions policy.
 - The root README's plugin table is checked against each `plugin.json` version in CI.
 
 ## 2026-11-21
