@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-renamed-notice"
+prompt: "Update the docs."
+criteria:
+  - "Tells the user that /docs:update-docs is now /docs sweep and that the old name goes away in docs 0.3.0"
+  - "Proceeds with the sweep (the docs skill in sweep mode)"

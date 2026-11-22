@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "What is the capital of France?"
+criteria:
+  - "Answers Paris"
+expect_skill: false

@@ -1,0 +1,7 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-report-only"
+prompt: "Review the tests for the books API against the requirements."
+criteria:
+  - "Uses the saved original request in .claude/qa/requirements.md as the only source of truth"
+  - "Runs the test-reviewer agent in a fresh context rather than reviewing inline from a summary"
+  - "States that it's report-only and won't edit, add or delete tests until the user approves"

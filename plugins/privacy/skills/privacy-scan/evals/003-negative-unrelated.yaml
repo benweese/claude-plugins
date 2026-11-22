@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "What does the git command 'git log --oneline' show?"
+criteria:
+  - "Explains that it shows the commit history with one line per commit (short hash and subject)"
+expect_skill: false

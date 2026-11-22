@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "Write a haiku about autumn."
+criteria:
+  - "Writes a three-line poem about autumn"
+expect_skill: false

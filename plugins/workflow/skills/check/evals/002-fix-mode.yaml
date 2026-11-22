@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-fix-mode"
+prompt: "check fix"
+criteria:
+  - "Runs npm run lint:fix"
+  - "Reports what was fixed and what still needs a fix by hand"

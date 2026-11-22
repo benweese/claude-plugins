@@ -1,0 +1,7 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-missing-config"
+prompt: "Show me the board."
+criteria:
+  - "Says .claude/board.json is missing or invalid and stops"
+  - "Prints a board.json template with version, owner and project"
+  - "Does not guess an owner or project number"

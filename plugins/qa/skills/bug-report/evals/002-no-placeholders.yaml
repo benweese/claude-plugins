@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-no-placeholders"
+prompt: "Bug: the search box crashes the page when I paste emoji."
+criteria:
+  - "Leaves out sections it can't fill instead of writing placeholder text such as 'TBD' or '<…>'"
+  - "States the expected behaviour (the page shouldn't crash) and the actual behaviour (it crashes)"

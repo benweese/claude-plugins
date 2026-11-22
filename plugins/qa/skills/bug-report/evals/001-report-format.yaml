@@ -1,0 +1,7 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-report-format"
+prompt: "Bug: on the cart page, removing the last item leaves the total at the old price instead of 0.00."
+criteria:
+  - "Writes a report with a title in the form '<Area> - <short summary>'"
+  - "Includes Steps to reproduce, Expected and Actual sections"
+  - "Shows the report first and asks for approval before saving it under bugs/"

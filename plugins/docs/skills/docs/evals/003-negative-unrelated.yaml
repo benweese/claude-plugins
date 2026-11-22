@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "What does HTTP status 404 mean?"
+criteria:
+  - "Explains that the requested resource wasn't found"
+expect_skill: false

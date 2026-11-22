@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "How do I rename a git branch?"
+criteria:
+  - "Gives a correct command such as 'git branch -m old new'"
+expect_skill: false

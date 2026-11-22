@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-report-only"
+prompt: "check"
+criteria:
+  - "Runs npm run lint (not lint:fix)"
+  - "Says it won't change files and reports problems grouped by file"

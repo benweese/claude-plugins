@@ -1,0 +1,57 @@
+# Claude reviews every ready (non-draft) PR opened by the repo owner. Review only: it can't push (contents: read).
+# Fork PRs never run it (allow_fork_prs: false; pull_request, not pull_request_target).
+# anthropics/claude-code-action and the oven-sh/setup-bun it uses are allow-listed by name in Settings → Actions;
+# this file pins the exact SHA, so every Dependabot bump shows up as a PR to review.
+# Auth: CLAUDE_CODE_OAUTH_TOKEN (claude setup-token) + the Claude GitHub App (OIDC → id-token).
+# Docs: https://github.com/anthropics/claude-code-action (usage, security, solutions → "Automatic PR Code Review").
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+permissions: {}
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false && github.actor == github.repository_owner && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67 # v1.0.286
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allow_fork_prs: false
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request to the benweese Claude Code plugin marketplace (public repo). Read README.md and
+            docs/marketplace-plan.md first. The PR branch is checked out. Check, in this order:
+            1. Privacy: no personal data (real names, emails, phone numbers, card numbers, addresses, credentials) in
+               code, fixtures, docs, commit messages or the PR text. Made-up data and example.com are fine.
+            2. Plugin rules: every hook is opt-in through .claude/<plugin>.json with "version": 1 (missing or invalid =
+               off), except the guardrails secret blocker; hooks are Node with node:test tests; a version bump updates
+               plugin.json, marketplace.json, the README table and the plugin's CHANGELOG together.
+            3. Workflows: every action pinned to a commit SHA with a version comment; only GitHub-owned or allow-listed
+               actions; third-party tools via docker run with images pinned in .github/docker/.
+            4. Run: node --test plugins/*/test/*.test.mjs test/*.test.mjs examples/sample-app/server.test.mjs
+               and report failures with the failing test.
+            5. Bugs, edge cases and missing tests in the changed code.
+
+            Keep it short: lead with what must change, then nits. Don't repeat what's fine.
+            Use `gh pr comment` for one summary comment, and
+            `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) for specific lines.
+            Only post GitHub comments. Never push or edit files.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(node --test:*)"

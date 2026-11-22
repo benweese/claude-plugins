@@ -27,11 +27,13 @@ test("every `uses:` in every workflow is pinned to a commit SHA (or a docker ima
 	assert.deepEqual(bad, []);
 });
 
-// The repo's Actions policy allows only GitHub-owned actions plus what's allow-listed in Settings → Actions (each at
-// an exact SHA). Keep this list the same as that setting.
+// The repo's Actions policy (Settings → Actions): GitHub-owned actions, plus these allow-list patterns. Keep this the
+// same as that setting. "*" = allow-listed by name (the workflow still pins an exact SHA); a SHA = only that commit.
+// oven-sh/setup-bun@* is allow-listed too: claude-code-action runs it inside its composite action.
 const ALLOWED_OWNERS = ["actions", "github"];
+const ALLOW_LIST = { "anthropics/claude-code-action": "*", "skill-bench/skill-eval-action": "32cb44e77cf3147ebbe140a953065e0ac89eddb6" };
 
-test("workflows match the repo's Actions policy: GitHub-owned actions only, no docker:// steps", () => {
+test("workflows match the repo's Actions policy: GitHub-owned or allow-listed actions, no docker:// steps", () => {
 	const dir = path.join(ROOT, ".github", "workflows");
 	const bad = [];
 	for (const f of readdirSync(dir).filter((x) => /\.ya?ml$/.test(x))) {
@@ -39,7 +41,12 @@ test("workflows match the repo's Actions policy: GitHub-owned actions only, no d
 			const m = /^\s*-?\s*uses:\s*(\S+)/.exec(line);
 			if (!m || m[1].startsWith("./")) continue;
 			if (m[1].startsWith("docker://")) bad.push(`${f}:${i + 1} docker:// steps are blocked by the policy — use docker run with an image pinned in .github/docker/<tool>/Dockerfile`);
-			else if (!ALLOWED_OWNERS.includes(m[1].split("/")[0])) bad.push(`${f}:${i + 1} ${m[1].split("@")[0]} isn't allowed by the repo's Actions policy`);
+			else {
+				const [name, ref] = m[1].split("@");
+				const listed = ALLOW_LIST[name];
+				const ok = ALLOWED_OWNERS.includes(name.split("/")[0]) || listed === "*" || listed === ref;
+				if (!ok) bad.push(`${f}:${i + 1} ${m[1]} isn't allowed by the repo's Actions policy${listed ? ` (only @${listed} is)` : ""}`);
+			}
 		}
 	}
 	assert.deepEqual(bad, []);

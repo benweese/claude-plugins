@@ -1,0 +1,20 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-html-file-review"
+prompt: "Check src/signup.html for accessibility problems."
+files:
+  - path: "src/signup.html"
+    content: |
+      <!doctype html>
+      <html>
+      <body>
+        <h1>Sign up</h1>
+        <input id="email" placeholder="Email">
+        <img src="logo.png">
+        <div onclick="submit()">Send</div>
+      </body>
+      </html>
+criteria:
+  - "Reports that the email input has no label (a placeholder isn't a label) and shows a fix using a <label> element or aria-label"
+  - "Reports the image has no alt text and shows a fix"
+  - "Reports that the clickable div isn't keyboard-operable and suggests a <button>"
+  - "Does not call the page 'compliant' or 'accessible'"

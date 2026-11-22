@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-names-in-prose"
+prompt: "Our README mentions customers by full name in an example story. Will the privacy scan catch that?"
+criteria:
+  - "Explains that pattern scanning can't reliably see names in prose"
+  - "Suggests the privacy-reviewer agent for that kind of personal data"

@@ -1,0 +1,5 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-ambiguous-mode"
+prompt: "docs refresh-everything"
+criteria:
+  - "Asks which mode the user means (sweep or phase) instead of guessing"

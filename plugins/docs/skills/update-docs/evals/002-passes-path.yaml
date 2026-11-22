@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-passes-path"
+prompt: "Update the docs for src/api only."
+criteria:
+  - "Says the old name is deprecated in favour of /docs sweep"
+  - "Limits the sweep to src/api"

@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-no-target-asks"
+prompt: "Can you run an accessibility check?"
+criteria:
+  - "Asks what to check: a running page URL, an HTML file, or components/files"
+  - "Does not claim to have found or fixed any problems"
