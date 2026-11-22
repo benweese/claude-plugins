@@ -10,8 +10,8 @@ What the `benweese` marketplace will hold, how each plugin is configured per pro
 | `docs` | 0.2.0 | `/docs sweep` and `/docs phase N` (`update-docs` kept as a deprecated alias until 0.3.0) |
 | `workflow` | 0.2.0 | `/board` (config-driven, read-only until go) and check. Planned: `/release` |
 | `accessibility` | planned | Helps Claude **write** accessible code: `/a11y` (axe via Playwright, WCAG 2.2 AA in plain English) and an a11y-reviewer agent. Testing lives in `qa` |
-| `privacy` | planned | privacy-scan skill, privacy-reviewer agent, an opt-in commit-blocking hook, an optional plain-git hook installer |
-| `guardrails` | 0.1.0 | Secret blocker before `git commit` (on by default); opt-in protected files, dangerous-command confirm, lint after edit |
+| `privacy` | 0.1.0 | `/privacy-scan`, privacy-reviewer agent, opt-in commit blocker, plain-git hook installer |
+| `guardrails` | 0.1.1 | Secret blocker before `git commit` (on by default); opt-in protected files, dangerous-command confirm, lint after edit |
 
 Every plugin folder has `.claude-plugin/plugin.json`, `README.md` and `CHANGELOG.md`, with `agents/`, `skills/` and `hooks/` as needed. Slash commands are skills (the docs recommend `skills/` over `commands/` for new plugins).
 
@@ -36,7 +36,7 @@ Each plugin reads an optional file in the project's `.claude/` folder. Every fil
 { "version": 1, "level": "AA", "wcag": "2.2", "projectList": null }
 
 // .claude/privacy.json
-{ "version": 1, "commitHook": false, "dollarAmounts": false, "patterns": [], "denylist": null, "allowlist": [] }
+{ "version": 1, "commitHook": false, "dollarAmounts": false, "patterns": [{ "name": "…", "regex": "…" }], "denylist": null, "allowlist": [] }
 
 // .claude/guardrails.json
 { "version": 1, "secrets": true, "lint": false, "protectedFiles": false, "dangerousCommands": false,

@@ -1,8 +1,11 @@
-// Shared pieces for the guardrails hooks: config, hook I/O, globs, shell splitting, git helpers.
+// Shared pieces for the guardrails hooks: config, hook I/O, globs, the default branch. Command splitting and
+// "what will be committed" live in commit-content.mjs (a synced copy of shared/commit-content.mjs).
 // Hook input/output format: https://code.claude.com/docs/en/hooks
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { git } from "./commit-content.mjs";
+
+export { splitCommands, words, gitSub, git } from "./commit-content.mjs";
 
 export const FEATURES = ["secrets", "lint", "protected", "dangerous"];
 export const DEFAULT_PROTECTED = [".env*", "*.pem", "*.key", "id_*", "credentials*"];
@@ -87,67 +90,6 @@ export function matchesAny(filePath, globs, projectDir) {
 		const re = globToRegex(g);
 		return re.test(base) || re.test(rel);
 	});
-}
-
-/** Splits a shell command line into simple commands at && || ; | and newlines (quotes respected). */
-export function splitCommands(line) {
-	const parts = [];
-	let cur = "";
-	let q = null;
-	for (let i = 0; i < line.length; i++) {
-		const ch = line[i];
-		if (q) {
-			cur += ch;
-			if (ch === q) q = null;
-			continue;
-		}
-		if (ch === "'" || ch === '"') {
-			q = ch;
-			cur += ch;
-			continue;
-		}
-		const two = line.slice(i, i + 2);
-		if (two === "&&" || two === "||") {
-			parts.push(cur);
-			cur = "";
-			i++;
-			continue;
-		}
-		if (ch === ";" || ch === "|" || ch === "\n") {
-			parts.push(cur);
-			cur = "";
-			continue;
-		}
-		cur += ch;
-	}
-	parts.push(cur);
-	return parts.map((p) => p.trim()).filter(Boolean);
-}
-
-/** Words of a simple command (quotes removed; good enough for flags and paths). */
-export function words(cmd) {
-	const out = [];
-	const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-	let m;
-	while ((m = re.exec(cmd))) out.push(m[1] ?? m[2] ?? m[3]);
-	return out;
-}
-
-/** For `git [-C dir] [-c k=v] <sub> …`: { sub, args } — or null if it isn't git. */
-export function gitSub(cmd) {
-	const w = words(cmd);
-	let i = 0;
-	while (i < w.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(w[i])) i++; // leading VAR=value
-	if (w[i] !== "git") return null;
-	i++;
-	while (i < w.length && w[i].startsWith("-")) i += w[i] === "-C" || w[i] === "-c" ? 2 : 1;
-	return w[i] ? { sub: w[i], args: w.slice(i + 1) } : null;
-}
-
-/** Runs git in a folder; returns stdout ("" on error). */
-export function git(cwd, args) {
-	const r = spawnSync("git", args, { cwd, encoding: "utf8" });
-	return r.status === 0 ? r.stdout : "";
 }
 
 /** The repo's default branch: origin/HEAD, else init.defaultBranch, else null (unknown). */

@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+// Installs the privacy scanner as a plain-git pre-commit hook, so commits made outside Claude are checked too.
+//   install-privacy-git-hook [--force]
+// Copies a self-contained scanner into <hooks dir>/privacy/ (the plugin's own path changes on every
+// update, so the hook can't point into it) and writes <hooks dir>/pre-commit. Respects core.hooksPath.
+// Stops — never overwrites — if a pre-commit hook already exists (--force replaces it), and stops with
+// instructions for husky. Only reports success after checking git will actually run the hook.
+// Re-run it after updating the plugin. No denylist values are written into the hook.
+import { accessSync, chmodSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const SCRIPTS = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts");
+const FILES = ["git-pre-commit.mjs", "detectors.mjs", "commit-content.mjs"];
+const MARK = "# installed by install-privacy-git-hook (privacy plugin)";
+
+const git = (cwd, args) => {
+	const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+	return r.status === 0 ? r.stdout.trim() : null;
+};
+
+/** Installs into the repo at cwd. Returns {ok, message}. */
+export function install(cwd, { force = false } = {}) {
+	const root = git(cwd, ["rev-parse", "--show-toplevel"]);
+	if (!root) return { ok: false, message: "Not inside a git repository — run this from the repo you want to protect." };
+	const hooksPath = git(root, ["config", "--get", "core.hooksPath"]);
+	if (hooksPath && /(^|\/)\.husky(\/|$)/.test(hooksPath)) {
+		return {
+			ok: false,
+			message: `This repo uses husky (core.hooksPath = ${hooksPath}); husky regenerates that folder, so nothing was installed.\nTo add the check, copy the scanner and call it from your husky hook:\n  mkdir -p .husky/privacy && cp "${SCRIPTS}"/{${FILES.join(",")}} .husky/privacy/\n  echo 'node .husky/privacy/git-pre-commit.mjs' >> .husky/pre-commit`
+		};
+	}
+	const target = path.resolve(root, git(root, ["rev-parse", "--git-path", "hooks/pre-commit"]) || ".git/hooks/pre-commit");
+	if (existsSync(target) && !force) {
+		return { ok: false, message: `A pre-commit hook already exists at ${path.relative(root, target)} — nothing was changed. Add this line to it yourself:\n  node "${path.join(path.dirname(target), "privacy", "git-pre-commit.mjs")}"\nor re-run with --force to replace it.` };
+	}
+	const dir = path.join(path.dirname(target), "privacy");
+	mkdirSync(dir, { recursive: true });
+	for (const f of FILES) copyFileSync(path.join(SCRIPTS, f), path.join(dir, f));
+	writeFileSync(target, `#!/bin/sh\n${MARK}\nexec node "$(dirname "$0")/privacy/git-pre-commit.mjs"\n`);
+	chmodSync(target, 0o755);
+	// Verify git will run it: the path git resolves is ours, it exists, and it's executable.
+	const resolved = path.resolve(root, git(root, ["rev-parse", "--git-path", "hooks/pre-commit"]) || "");
+	try {
+		accessSync(target, constants.X_OK);
+	} catch {
+		return { ok: false, message: `Wrote ${path.relative(root, target)} but it isn't executable, so git won't run it.` };
+	}
+	if (resolved !== target || !FILES.every((f) => existsSync(path.join(dir, f)))) {
+		return { ok: false, message: `Wrote the hook, but git resolves pre-commit to ${resolved} — it won't run. Nothing to rely on yet.` };
+	}
+	const cfgNote = (() => {
+		try {
+			const c = JSON.parse(readFileSync(path.join(root, ".claude", "privacy.json"), "utf8"));
+			return c && c.version === 1 && c.commitHook === true ? "" : "\nNote: it won't block anything until .claude/privacy.json has { \"version\": 1, \"commitHook\": true }.";
+		} catch {
+			return "\nNote: it won't block anything until .claude/privacy.json has { \"version\": 1, \"commitHook\": true }.";
+		}
+	})();
+	return { ok: true, message: `Installed: git will run ${path.relative(root, target)} on every commit (scanner in ${path.relative(root, dir)}/). Re-run this after updating the privacy plugin.${cfgNote}` };
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+	const r = install(process.cwd(), { force: process.argv.includes("--force") });
+	console.log(r.message);
+	process.exit(r.ok ? 0 : 1);
+}

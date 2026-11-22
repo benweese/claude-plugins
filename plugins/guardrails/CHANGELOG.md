@@ -2,6 +2,12 @@
 
 All notable changes to the `guardrails` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.1] - 2026-11-21
+
+### Changed
+
+- The "what will this commit contain" logic now comes from one shared source (`shared/commit-content.mjs`, copied into `scripts/commit-content.mjs`), so guardrails and privacy check exactly the same content. No behaviour change.
+
 ## [0.1.0] - 2026-11-21
 
 ### Added
