@@ -1,0 +1,7 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-saves-request-first"
+prompt: "Write tests for the login page: a valid email and password signs in; a wrong password shows 'Invalid credentials'."
+criteria:
+  - "Saves the original request verbatim before planning (qa-requirements save chat or equivalent)"
+  - "Plans before writing tests (a planner producing acceptance criteria and scenarios)"
+  - "Stops for human review of the plan before generating test code"

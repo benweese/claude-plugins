@@ -1,0 +1,5 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-phase-needs-number"
+prompt: "docs phase"
+criteria:
+  - "Asks for the phase number before doing anything"

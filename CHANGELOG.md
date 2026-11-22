@@ -15,6 +15,10 @@ Changes to the **`benweese` marketplace** itself: plugins added or removed, CI a
 
 ### Added
 
+- **Releases:** `release.yml` tags `<plugin>-v<version>` and publishes a GitHub release with that version's CHANGELOG section whenever a plugin's version on `main` has no tag (versions stay hand-bumped; no PAT).
+- **Claude review** on the owner's ready PRs and **`@claude`** in the owner's comments (`anthropics/claude-code-action`, allow-listed by name with `oven-sh/setup-bun`, pinned to an exact SHA in the workflows; never on fork PRs; can't push).
+- **Skill Eval:** 3–5 cases per skill in `skills/<skill>/evals/` (30 in all); graded by `skill-bench/skill-eval-action` (allow-listed at one exact SHA) only on the `eval` label or by hand; the skill under test gets no tools.
+
 - CI: **gitleaks** secret scanning on every push and PR, **actionlint** when workflows change, and **CodeQL** (JavaScript/TypeScript and the workflows) on PRs, pushes to `main` and weekly.
 - This changelog.
 - Docs site: a page for every plugin's README, CHANGELOG and `docs/`, built from `marketplace.json` (a new plugin gets pages automatically), with a second navigation row on each plugin's pages. Old `changelog.html` and `worked-example.html` redirect to their new names.

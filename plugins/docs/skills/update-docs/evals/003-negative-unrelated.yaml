@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "Sort these numbers: 5, 2, 9, 1."
+criteria:
+  - "Answers 1, 2, 5, 9"
+expect_skill: false

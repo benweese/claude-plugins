@@ -71,8 +71,12 @@ CHANGELOG.md                      marketplace-level changes (each plugin has its
 | `actionlint.yml` | when workflows change | the workflow files (actionlint in a container) |
 | `codeql.yml` | PRs, pushes to `main`, weekly | code scanning: JavaScript/TypeScript and the workflows |
 | `pages.yml` | pushes to `main` that change docs | publishes the [docs site](https://code.benweese.com/playwright-ai-qa-agents/) |
+| `release.yml` | pushes to `main` that change a plugin's version or CHANGELOG | for each plugin version without a tag: tags `<plugin>-v<version>` and publishes a GitHub release with that CHANGELOG section |
+| `claude-review.yml` | the owner's ready (non-draft) PRs | Claude reviews the PR (comments only; never pushes). Not on fork PRs |
+| `claude.yml` | `@claude` in the owner's comments | Claude answers or reviews (can't push) |
+| `skill-eval.yml` | **only** the `eval` label on a PR, or started by hand | grades the changed skills (or one named skill) against their `evals/` cases, one skill per job, pass mark 80% |
 
-The repo allows only GitHub-owned actions (plus any allow-listed at an exact SHA), so third-party tools run with `docker run` from images pinned by tag + digest in `.github/docker/<tool>/Dockerfile`. Every action is pinned to a commit SHA. Tests fail on an unpinned or disallowed `uses:` or an unpinned image, and Dependabot keeps the action pins and image digests current.
+The repo allows only GitHub-owned actions plus an allow list (`anthropics/claude-code-action@*` and the `oven-sh/setup-bun@*` it runs inside, `skill-bench/skill-eval-action` at one exact SHA), so third-party tools run with `docker run` from images pinned by tag + digest in `.github/docker/<tool>/Dockerfile`. Every action is pinned to a commit SHA. Tests fail on an unpinned or disallowed `uses:` or an unpinned image, and Dependabot keeps the action pins and image digests current.
 
 ## Development
 
@@ -84,7 +88,9 @@ node --test plugins/*/test/*.test.mjs test/*.test.mjs examples/sample-app/server
 node scripts/sync-shared.mjs                     # after editing shared/ (a test fails if copies differ)
 ```
 
-**Releasing a plugin:** bump `version` in `plugins/<name>/.claude-plugin/plugin.json`, in its entry in `.claude-plugin/marketplace.json` and in the table above (CI fails if they differ), add a `CHANGELOG.md` entry, push to `main`, then tag `<name>-v<version>`.
+**Releasing a plugin:** bump `version` in `plugins/<name>/.claude-plugin/plugin.json`, in its entry in `.claude-plugin/marketplace.json` and in the table above (CI fails if they differ), and add a `## [<version>] - <date>` section to its `CHANGELOG.md`. When that merges, `release.yml` tags `<name>-v<version>` and publishes the GitHub release from the CHANGELOG section (it stops if the section is missing). Preview with `node scripts/release.mjs --dry-run`.
+
+**Skill evals:** each skill has 3–5 cases in `skills/<skill>/evals/*.yaml` ([format](https://github.com/skill-bench/skill-eval-action#eval-case-format)), including one that shouldn't trigger it. They run on the Anthropic API, so they **cost money** (a few cents per case, paid from a dedicated key with a low spend limit): add the `eval` label to a PR to grade the skills it changes, or run **Skill Eval** by hand for one skill (`<plugin>/<skill>`). They never run automatically. Playwright's vendored `qa:playwright-cli` has no evals.
 
 ## License
 

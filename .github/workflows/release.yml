@@ -1,0 +1,35 @@
+# Publishes a GitHub release (tag <plugin>-v<version>, notes from that version's CHANGELOG section) for each plugin
+# whose version on main has no tag yet. Versions are bumped by hand in PRs; this never edits files or commits.
+# Uses only GitHub-owned actions and the gh CLI on the runner, with the workflow's own token.
+name: Release plugins
+
+on:
+  push:
+    branches: [main]
+    paths: ["plugins/*/.claude-plugin/plugin.json", "plugins/*/CHANGELOG.md", ".claude-plugin/marketplace.json", "scripts/release.mjs", ".github/workflows/release.yml"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create tags and releases
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Release untagged plugin versions
+        run: node scripts/release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}

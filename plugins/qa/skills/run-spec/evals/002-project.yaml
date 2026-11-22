@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-project"
+prompt: "Run the smoke project headed."
+criteria:
+  - "Builds the command 'npx playwright test --project=smoke --reporter=line --headed' or equivalent"
+  - "Says it will report passed, failed and skipped counts"

@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "Explain the difference between let and const in JavaScript."
+criteria:
+  - "Explains that const bindings can't be reassigned while let bindings can"
+expect_skill: false

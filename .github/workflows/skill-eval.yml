@@ -1,0 +1,76 @@
+# Skill Eval: grades a skill's answers against its evals/*.yaml cases with Claude (paid API: pennies per case).
+# Runs ONLY when the owner adds the "eval" label to a PR (the skills that PR changes) or starts it by hand for one
+# skill. Never automatically. One skill per job; pass threshold 80%.
+# The action (skill-bench/skill-eval-action) is allow-listed at this exact SHA in Settings → Actions. The API key is
+# passed only to the action's eval step (masked); the skill under test gets no allowed-tools, so it can't run Bash.
+# Docs: https://github.com/skill-bench/skill-eval-action (README at the pinned SHA).
+name: Skill Eval
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      skill:
+        description: "<plugin>/<skill>, e.g. qa/review-tests"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  pick:
+    if: >-
+      github.actor == github.repository_owner &&
+      (github.event_name == 'workflow_dispatch' || github.event.label.name == 'eval')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      skills: ${{ steps.pick.outputs.skills }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - id: pick
+        name: Pick the skills to evaluate
+        env:
+          EVENT: ${{ github.event_name }}
+          SKILL: ${{ inputs.skill }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            node scripts/eval-skills.mjs one "$SKILL"
+          else
+            node scripts/eval-skills.mjs changed "$BASE"
+          fi
+
+  eval:
+    needs: pick
+    if: needs.pick.outputs.skills != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write # the action's summary comment
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include: ${{ fromJSON(needs.pick.outputs.skills) }}
+    name: eval (${{ matrix.plugin }}/${{ matrix.skill }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: skill-bench/skill-eval-action@32cb44e77cf3147ebbe140a953065e0ac89eddb6 # v1.3.0
+        with:
+          skill-name: ${{ matrix.skill }}
+          skill-path: ${{ matrix.path }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          pass-threshold: "80"

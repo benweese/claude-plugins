@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "Convert 5 kilometres to miles."
+criteria:
+  - "Answers about 3.1 miles"
+expect_skill: false

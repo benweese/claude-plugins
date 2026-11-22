@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-accessibility-routes-to-agent"
+prompt: "Write accessibility tests for the checkout page."
+criteria:
+  - "Routes the request to the a11y-tester agent rather than the planner and generator path"
+  - "Mentions that ARIA snapshot baselines need the user's review"

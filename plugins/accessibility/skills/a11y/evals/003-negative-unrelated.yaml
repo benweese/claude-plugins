@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "Write a JavaScript function that returns the sum of an array of numbers."
+criteria:
+  - "Returns a working function that sums the numbers in an array"
+expect_skill: false

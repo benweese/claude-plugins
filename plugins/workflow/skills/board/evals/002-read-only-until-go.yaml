@@ -1,0 +1,10 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-read-only-until-go"
+prompt: "Show me the board."
+files:
+  - path: ".claude/board.json"
+    content: |
+      {"version": 1, "owner": "example-user", "project": 1}
+criteria:
+  - "Treats the board as read-only and offers to start the top Ready issue instead of starting it"
+  - "Says it will wait for the user to say go before assigning, moving the card or creating a branch"

@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "001-test-id"
+prompt: "Run test 12."
+criteria:
+  - "Builds the command with --grep \"#0012\" (the # and four digits)"
+  - "Uses npx playwright test with --reporter=line"

@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "003-negative-unrelated"
+prompt: "What is a CSS flexbox?"
+criteria:
+  - "Explains that flexbox is a CSS layout model for arranging items in a row or column"
+expect_skill: false

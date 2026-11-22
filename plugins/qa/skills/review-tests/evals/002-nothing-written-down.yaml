@@ -1,0 +1,6 @@
+# Skill Eval case (skill-bench/skill-eval-action format). Made-up data only.
+name: "002-nothing-written-down"
+prompt: "Review the tests. There's no written requirement, I just said 'go test the search page'."
+criteria:
+  - "Restates its understanding as a numbered list of requirements"
+  - "Waits for the user's yes before saving that list and reviewing"
