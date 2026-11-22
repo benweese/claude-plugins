@@ -5,10 +5,10 @@ A [Claude Code](https://claude.com/claude-code) plugin from the [benweese market
 ## Install
 
 ```bash
-claude plugin install docs --marketplace benweese/playwright-ai-qa-agents
+claude plugin install docs --marketplace benweese/claude-plugins
 ```
 
-Or `claude plugin marketplace add benweese/playwright-ai-qa-agents`, then `claude plugin install docs@benweese`. Start a new session afterwards.
+Or `claude plugin marketplace add benweese/claude-plugins`, then `claude plugin install docs@benweese`. Start a new session afterwards.
 
 ## Usage
 

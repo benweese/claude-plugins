@@ -13,6 +13,11 @@ Changes to the **`benweese` marketplace** itself: plugins added or removed, CI a
 
 ## 2026-11-22
 
+### Changed
+
+- **Renamed the repo `benweese/playwright-ai-qa-agents` → `benweese/claude-plugins`.** GitHub redirects git and web traffic from the old name; the docs site moved to code.benweese.com/claude-plugins/, with redirect pages at the old path (served from benweese.github.io). Install commands, badges, links and each plugin's `homepage` / `repository` now use the new name. The marketplace name (`benweese`) and installs like `qa@benweese` don't change, so no plugin version changed.
+- **Never create a repo named playwright-ai-qa-agents under benweese — it breaks GitHub's redirect for old clones and marketplace installs.**
+
 ### Added
 
 - **Releases:** `release.yml` tags `<plugin>-v<version>` and publishes a GitHub release with that version's CHANGELOG section whenever a plugin's version on `main` has no tag (versions stay hand-bumped; no PAT).

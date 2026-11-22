@@ -1,7 +1,7 @@
 name: Docs site
 
 # Publishes every plugin's README, CHANGELOG and docs/, the marketplace changelog and plan to
-# https://code.benweese.com/playwright-ai-qa-agents/, rendered by GitHub's Markdown API.
+# https://code.benweese.com/claude-plugins/, rendered by GitHub's Markdown API.
 on:
   push:
     branches: [main]
