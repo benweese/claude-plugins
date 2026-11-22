@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- A deliberately broken page: fixtures for accessibility checks (each problem is listed in the README). -->
+<html>
+<head><meta charset="utf-8"><title>Broken on purpose</title>
+<style>.faint { color: #9a9a9a; background: #ffffff; } .tiny { width: 16px; height: 16px; padding: 0; }</style>
+</head>
+<body>
+	<h3>Add a book</h3>
+	<input id="title" placeholder="Title">
+	<img src="cover.png">
+	<p class="faint">Low-contrast help text that is hard to read.</p>
+	<div onclick="alert('saved')">Save</div>
+	<button class="tiny"></button>
+</body>
+</html>

@@ -44,6 +44,12 @@ test("POST /api/books rejects missing fields, a long title and bad JSON", async 
 	assert.equal((await post("not json")).status, 400);
 });
 
+test("GET /a11y-broken serves the accessibility fixture", async () => {
+	const res = await fetch(`${base}/a11y-broken`);
+	assert.equal(res.status, 200);
+	assert.match(await res.text(), /Broken on purpose/);
+});
+
 test("unknown routes and methods", async () => {
 	assert.equal((await fetch(`${base}/nope`)).status, 404);
 	assert.equal((await fetch(`${base}/api/books`, { method: "PUT" })).status, 405);

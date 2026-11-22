@@ -15,8 +15,9 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace named **`benw
 | [workflow](plugins/workflow/README.md) | 0.2.0 | `/board` for GitHub Projects (configured per repo) and a lint check |
 | [guardrails](plugins/guardrails/README.md) | 0.1.1 | Blocks committing secrets (on by default); opt-in protected files, a confirm step for destructive commands, lint after edit |
 | [privacy](plugins/privacy/README.md) | 0.1.0 | `/privacy-scan`, a reviewer agent, an opt-in commit blocker and a plain-git hook for personal data |
+| [accessibility](plugins/accessibility/README.md) | 0.1.0 | `/a11y` (axe scan with plain-English fixes), an a11y-reviewer agent and a contrast calculator |
 
-Planned: `accessibility`, plus more for `qa`, `docs` and `workflow`. They're added here as each one ships. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
+Planned: more for `qa` (review-tests, an a11y testing agent, a component testing agent), `docs` and `workflow`. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
 
 ## Install
 
@@ -35,6 +36,7 @@ claude plugin install docs@benweese
 claude plugin install workflow@benweese
 claude plugin install guardrails@benweese
 claude plugin install privacy@benweese
+claude plugin install accessibility@benweese
 ```
 
 Add `--scope project` to record a plugin in the repo's `.claude/settings.json` for everyone who opens it. Where your client has the `/plugin` command, `/plugin install <plugin> --marketplace benweese/playwright-ai-qa-agents` does the same.

@@ -9,7 +9,7 @@ What the `benweese` marketplace will hold, how each plugin is configured per pro
 | `qa` | 1.2.0 | Works with or without playwright-test-commons (copies its helpers when it's missing). Agents: page-mapper, api/ui test planners and generators, ui-test-healer. Skills: author-tests, run-spec, bug-report, playwright-cli. Hook (opt-in): lint + `playwright test --list` after test-file edits. Planned: `/review-tests` with a test-reviewer agent; an a11y **testing** agent; a component testing agent |
 | `docs` | 0.2.0 | `/docs sweep` and `/docs phase N` (`update-docs` kept as a deprecated alias until 0.3.0) |
 | `workflow` | 0.2.0 | `/board` (config-driven, read-only until go) and check. Planned: `/release` |
-| `accessibility` | planned | Helps Claude **write** accessible code: `/a11y` (axe via Playwright, WCAG 2.2 AA in plain English) and an a11y-reviewer agent. Testing lives in `qa` |
+| `accessibility` | 0.1.0 | Helps Claude **build** accessible UI: `/a11y` (one-off axe scan with the project's own Playwright, plain-English fixes), a11y-reviewer agent, `a11y-contrast`. Testing lives in `qa` |
 | `privacy` | 0.1.0 | `/privacy-scan`, privacy-reviewer agent, opt-in commit blocker, plain-git hook installer |
 | `guardrails` | 0.1.1 | Secret blocker before `git commit` (on by default); opt-in protected files, dangerous-command confirm, lint after edit |
 
