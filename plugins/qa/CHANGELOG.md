@@ -2,6 +2,16 @@
 
 All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
 
+## [1.5.0] - 2026-11-21
+
+### Added
+
+- **`component-tester`** agent: writes component tests in the runner the repo already uses and never picks one (none → it lists the options and asks). Covers states and variants (props, empty, loading, error, disabled), not flows; finds untested states; runs accessibility checks on every state it renders (axe + the `a11y` bundle in Playwright, Storybook's a11y addon, axe-core in jsdom with its limits stated).
+- **`qa-components`** (on Claude's PATH): `detect` finds Playwright's built-in `mount` + story gallery (1.62+), the removed `@playwright/experimental-ct-*` packages (with a migration warning), Storybook's test runner / Vitest addon, Vitest browser mode, and Vitest / Jest with jsdom; and where Playwright's own `playwright-component-testing` skill is in the repo's `node_modules` (version-matched; not bundled or linked). `coverage` maps `*.story.*` stories to the tests that mount them: untested stories, unknown mounts, common states with no story.
+- `/review-tests`: concrete rule for component tests that are really flows (leave the component, chain goals, or use the real backend) → scope creep, move to e2e.
+- `author-tests` routes component-test requests to the `component-tester`.
+- Sample app: a framework-free `BookList` component with five stories and a story gallery to Playwright's gallery contract (`/playwright/gallery/index.html`), plus `fixtures/components/`: specs that leave the `LoadFailed` state untested and a flow written as a component test. A real Playwright run (CI) mounts every state through the built-in fixture and scans each one with axe.
+
 ## [1.4.0] - 2026-11-21
 
 ### Added

@@ -1,0 +1,178 @@
+#!/usr/bin/env node
+// qa-components: facts for the component-tester (it never installs or picks anything).
+//   qa-components detect      which component-test runner(s) the repo already uses, and where Playwright's own
+//                             playwright-component-testing skill is in node_modules (version-matched to the repo)
+//   qa-components coverage    Playwright story-gallery stories (*.story.*) vs the tests that mount them: untested
+//                             stories, mounts of unknown stories, and common states with no story
+// Options: --stories-root <dir> (default .claude/qa.json "components.storiesRoot", else src),
+//          --tests <dir> (default "components.testDir", else tests), --json. Runs in the repo root.
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SKILL = path.join("lib", "tools", "skills", "playwright-component-testing", "SKILL.md");
+const SKIP = new Set(["node_modules", ".git", "dist", "build", "coverage", "test-results", "playwright-report", ".next"]);
+
+function readJson(file) {
+	try {
+		return JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+/** Every file under dir (skipping node_modules, build output, …), as paths relative to base with "/". */
+function walk(dir, base = dir, depth = 0) {
+	if (depth > 12 || !existsSync(dir)) return [];
+	return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+		if (SKIP.has(e.name)) return [];
+		const full = path.join(dir, e.name);
+		return e.isDirectory() ? walk(full, base, depth + 1) : [path.relative(base, full).split(path.sep).join("/")];
+	});
+}
+
+/** .claude/qa.json "components" settings (only with "version": 1). */
+function settings(root) {
+	const qa = readJson(path.join(root, ".claude", "qa.json"));
+	const c = qa && qa.version === 1 && qa.components && typeof qa.components === "object" ? qa.components : {};
+	return { storiesRoot: typeof c.storiesRoot === "string" ? c.storiesRoot : "src", testDir: typeof c.testDir === "string" ? c.testDir : "tests" };
+}
+
+const ver = (v) => (String(v ?? "").match(/\d+(?:\.\d+){0,2}/)?.[0] || "0").split(".").map(Number).concat([0, 0]).slice(0, 3);
+const atLeast = (v, min) => {
+	const [a, b] = [ver(v), ver(min)];
+	return a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || 0;
+};
+
+/** The installed version of a package (node_modules first, else the declared range), or null. */
+function installed(root, pkg, name) {
+	const v = readJson(path.join(root, "node_modules", name, "package.json"))?.version;
+	return v ?? pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? null;
+}
+
+/** Where Playwright's playwright-component-testing skill is (relative to root), or null. */
+export function skillPath(root) {
+	for (const dir of [path.join("node_modules", "playwright-core"), path.join("node_modules", "@playwright", "test", "node_modules", "playwright-core")]) {
+		if (existsSync(path.join(root, dir, SKILL))) return path.join(dir, SKILL).split(path.sep).join("/");
+	}
+	return null;
+}
+
+/** Which component-test runners the repo already uses. */
+export function detect(root) {
+	const pkg = readJson(path.join(root, "package.json")) || {};
+	const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+	const has = (n) => n in deps;
+	const files = walk(root);
+	const runners = [];
+	const notes = [];
+	const pw = installed(root, pkg, "@playwright/test");
+	const gallery = files.find((f) => /(?:^|\/)playwright\/gallery\/index\.html$/.test(f));
+	const mountSpecs = files.filter((f) => /\.(spec|test)\.[cm]?[jt]sx?$/.test(f) && /\bmount\s*(?:<[^>]*>)?\(\s*['"`]/.test(readFileSync(path.join(root, f), "utf8")));
+	if (pw && atLeast(pw, "1.62.0") >= 0 && (gallery || mountSpecs.length)) {
+		runners.push({ id: "playwright-gallery", name: "Playwright component testing (built-in mount + story gallery)", evidence: [gallery && `gallery ${gallery}`, mountSpecs.length && `${mountSpecs.length} spec(s) calling mount("…")`].filter(Boolean).join("; ") });
+	} else if (pw && atLeast(pw, "1.62.0") >= 0) {
+		notes.push(`@playwright/test ${pw} has the built-in mount fixture, but there's no story gallery (playwright/gallery/index.html) — not set up, so not a runner here.`);
+	}
+	const legacy = Object.keys(deps).filter((n) => n.startsWith("@playwright/experimental-ct-"));
+	if (legacy.length) runners.push({ id: "playwright-ct-experimental", name: `Playwright's old experimental component testing (${legacy.join(", ")})`, evidence: "package.json", warning: "removed in Playwright 1.63 and no longer published: tell the user, and point to the migration guide (references/migration.md next to the skill), before writing new tests in it" });
+	if (has("@storybook/test-runner")) runners.push({ id: "storybook-test-runner", name: "Storybook test runner", evidence: "@storybook/test-runner" });
+	if (has("@storybook/addon-vitest")) runners.push({ id: "storybook-vitest", name: "Storybook Vitest addon", evidence: "@storybook/addon-vitest" });
+	if (has("vitest")) {
+		const browser = Object.keys(deps).find((n) => /^@vitest\/browser(?:-|$)/.test(n));
+		if (browser) runners.push({ id: "vitest-browser", name: "Vitest browser mode", evidence: browser });
+		const dom = ["jsdom", "happy-dom"].find(has);
+		if (dom) runners.push({ id: "vitest-dom", name: `Vitest with ${dom}${has("@testing-library/react") || has("@testing-library/vue") || has("@testing-library/dom") ? " + Testing Library" : ""}`, evidence: dom, warning: `${dom} has no layout or real focus: contrast, focus visibility and reflow checks can't run there — say so in the report` });
+	}
+	if (has("jest") && (has("jest-environment-jsdom") || Object.keys(deps).some((n) => n.startsWith("@testing-library/")))) runners.push({ id: "jest-dom", name: "Jest with jsdom + Testing Library", evidence: "jest", warning: "jsdom has no layout or real focus: contrast, focus visibility and reflow checks can't run there — say so in the report" });
+	const skill = skillPath(root);
+	return { runners, notes, playwright: pw, skill };
+}
+
+/** Lines for `detect`. */
+export function detectLines(r) {
+	const out = [];
+	if (!r.runners.length) out.push("No component-test runner found. Don't pick one: list the options (Playwright's built-in mount + a story gallery, Storybook's test runner, Vitest browser mode) and ask the user.");
+	else if (r.runners.length === 1) out.push(`Runner: ${r.runners[0].name} (${r.runners[0].evidence}).`);
+	else out.push(`More than one runner: ${r.runners.map((x) => x.name).join("; ")}. Follow the one the existing component tests use; if that's unclear, ask the user.`);
+	for (const x of r.runners) if (x.warning) out.push(`  ${x.name}: ${x.warning}`);
+	for (const n of r.notes) out.push(n);
+	out.push(r.skill ? `Playwright's component-testing skill (matches the installed Playwright ${r.playwright}): ${r.skill} — read it and its references/ (gallery-spec.md first).` : "Playwright's component-testing skill isn't in node_modules (Playwright isn't installed, or it's older than 1.62).");
+	return out;
+}
+
+const STATES = {
+	default: /^(?:default|primary|basic|ready|populated)/i,
+	empty: /empty|none|zero|blank/i,
+	loading: /loading|pending|skeleton|busy/i,
+	error: /error|fail/i,
+	disabled: /disabled|read-?only|inactive/i
+};
+
+/** Stories (Playwright gallery, *.story.*) → {id, component, name, file}. */
+export function stories(root, storiesRoot = settings(root).storiesRoot) {
+	const out = [];
+	for (const f of walk(root).filter((x) => /\.story\.(?:[cm]?[jt]sx?|vue)$/.test(x))) {
+		const rel = f.startsWith(`${storiesRoot.replace(/\/+$/, "")}/`) ? f.slice(storiesRoot.replace(/\/+$/, "").length + 1) : f;
+		const component = rel.replace(/\.story\.\w+$/, "");
+		if (f.endsWith(".vue")) {
+			out.push({ id: component, component, name: "default", file: f });
+			continue;
+		}
+		const text = readFileSync(path.join(root, f), "utf8");
+		const names = [...text.matchAll(/export\s+(?:const|let|var|function|async\s+function|class)\s+([A-Za-z_$][\w$]*)/g)].map((m) => m[1]);
+		for (const n of names) out.push({ id: `${component}/${n}`, component, name: n, file: f });
+		if (/export\s+default\b/.test(text)) out.push({ id: component, component, name: "default", file: f });
+	}
+	return out;
+}
+
+/** mount("…") calls in the test folder → [{id, file}]. */
+export function mounts(root, testDir = settings(root).testDir) {
+	const out = [];
+	for (const f of walk(path.join(root, testDir), root).filter((x) => /\.(spec|test)\.[cm]?[jt]sx?$/.test(x))) {
+		const text = readFileSync(path.join(root, f), "utf8");
+		for (const m of text.matchAll(/\bmount\s*(?:<[^>]*>)?\(\s*(['"`])([^'"`]+)\1/g)) out.push({ id: m[2], file: f });
+	}
+	return out;
+}
+
+/** Stories vs mounts. A mount id matches a story id exactly or as a unique "/"-suffix (the gallery's grammar). */
+export function coverage(root, opts = {}) {
+	const s = settings(root);
+	const all = stories(root, opts.storiesRoot ?? s.storiesRoot);
+	const used = mounts(root, opts.tests ?? s.testDir);
+	const matches = (story, id) => story.id === id || story.id.endsWith(`/${id}`);
+	const rows = all.map((st) => ({ ...st, testedBy: [...new Set(used.filter((m) => matches(st, m.id)).map((m) => m.file))] }));
+	const unknown = used.filter((m) => !all.some((st) => matches(st, m.id)));
+	const components = [...new Set(all.map((st) => st.component))].map((c) => {
+		const names = all.filter((st) => st.component === c).map((st) => st.name);
+		return { component: c, noStoryFor: Object.entries(STATES).filter(([, re]) => !names.some((n) => re.test(n))).map(([k]) => k) };
+	});
+	return { stories: rows, untested: rows.filter((r) => !r.testedBy.length), unknown, components };
+}
+
+/** Lines for `coverage`. */
+export function coverageLines(c) {
+	if (!c.stories.length) return ["No *.story.* files found (Playwright story gallery). For Storybook (*.stories.*) or Vitest, read the stories and tests directly."];
+	const out = [`${c.stories.length} stories, ${c.stories.length - c.untested.length} mounted by a test.`];
+	if (c.untested.length) out.push(`UNTESTED stories (no test mounts them): ${c.untested.map((u) => u.id).join(", ")}`);
+	if (c.unknown.length) out.push(`mount() of a story that doesn't exist: ${c.unknown.map((u) => `"${u.id}" in ${u.file}`).join(", ")}`);
+	for (const k of c.components) if (k.noStoryFor.length) out.push(`${k.component}: no story named for ${k.noStoryFor.join(", ")} — if the component has that state, add a story for it (one export per state).`);
+	return out;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	const args = process.argv.slice(2);
+	const flag = (n) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
+	const root = process.cwd();
+	try {
+		const cmd = args[0];
+		const r = cmd === "detect" ? detect(root) : cmd === "coverage" ? coverage(root, { storiesRoot: flag("--stories-root"), tests: flag("--tests") }) : null;
+		if (!r) throw new Error("usage: qa-components detect | coverage [--stories-root <dir>] [--tests <dir>] [--json]");
+		console.log(args.includes("--json") ? JSON.stringify(r, null, 2) : (cmd === "detect" ? detectLines(r) : coverageLines(r)).join("\n"));
+	} catch (e) {
+		console.error(e.message);
+		process.exit(2);
+	}
+}
