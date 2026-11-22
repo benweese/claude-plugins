@@ -23,6 +23,8 @@ The page reference records what the page does **today**, bugs included. Expected
 
 The test repo's `CLAUDE.md` files (the root one and the folder guides) are the source of truth. If it says how to import `test`/`expect` (for example from a fixtures file), names a site-specific response helper, or describes quirks of the site, follow it over the defaults below.
 
+Helper names in plans (`getBody`, `validateJsonSchema`, `TAGS`, `generateTestDescription`, …) are playwright-test-commons' API. When commons isn't installed, the generators copy the same helpers into the repo's support folder (`qa-support`), so plans read the same either way.
+
 # Workflow
 
 1. List what the user should be able to do on the page, from the input and the page reference.

@@ -2,6 +2,18 @@
 
 All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-21
+
+### Added
+
+- **Works without playwright-test-commons.** When commons isn't installed, the generators copy its helpers into the repo with `qa-support` (on Claude's PATH): `core` and `ui` bundles copied only as needed, into `tests/support/` (or `.claude/qa.json` `"supportDir"`), TypeScript sources or compiled JS + `.d.ts` for repos without a tsconfig. Tests import the copy with relative paths. With commons installed, nothing changes.
+- `qa-support status | plan | install | update`: shows the devDependencies the helpers need (never edits `package.json`; skips compatible installs; never downgrades), stamps each copy with the commons version and its hash, offers updates for unmodified older copies, leaves edited ones alone, and stops on files it didn't write.
+- Helper templates generated from playwright-test-commons **v0.8.0** (`scripts/sync-commons-templates.mjs`); a test fails if a template changes, and CI fails if they drift from the tag.
+
+### Changed
+
+- playwright-test-commons is optional (recommended). Its `check-test-ids` stays there: for an id check in CI, install commons and run it.
+
 ## [1.1.0] - 2026-11-21
 
 ### Added

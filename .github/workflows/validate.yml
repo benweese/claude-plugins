@@ -35,5 +35,9 @@ jobs:
         run: claude plugin validate .
       - name: Validate each plugin (strict)
         run: for dir in plugins/*/; do claude plugin validate "$dir" --strict || exit 1; done
+      - name: qa helper templates match the pinned commons tag
+        run: |
+          node scripts/sync-commons-templates.mjs
+          git diff --exit-code -- plugins/qa/templates || { echo "::error::plugins/qa/templates differ from the pinned commons tag — run: node scripts/sync-commons-templates.mjs"; exit 1; }
       - name: Hook tests + sample app smoke tests
         run: node --test plugins/*/test/*.test.mjs test/*.test.mjs examples/sample-app/server.test.mjs

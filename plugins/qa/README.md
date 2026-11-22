@@ -78,10 +78,23 @@ It should name six agents (`page-mapper`, `api-test-planner`, `ui-test-planner`,
 
 - The layout used by playwright-e2e-demo: `api/` clients, `tests/api/` and `tests/ui/` specs, `schemas/`, `plans/` and `docs/pages/`
 - TypeScript, with `playwright.config.ts` at the repo root
-- [playwright-test-commons](https://github.com/benweese/playwright-test-commons) v0.7.0 or later (typed API responses, numeric test ids, and the `BasePage` checks, accessibility scan and `uniqueEmail` the generators use)
+- **Optional, recommended:** [playwright-test-commons](https://github.com/benweese/playwright-test-commons) v0.7.0 or later (typed API responses, numeric test ids, the `BasePage` checks, accessibility scan and `uniqueEmail` the generators use). Without it, the plugin copies the same helpers into the repo — see [Using qa without commons](#using-qa-without-commons)
 - `@playwright/cli` as a dev dependency, for the agents that drive a browser
 - `npm run lint` that includes the type-check (and ideally JSDoc rules)
 - A `CLAUDE.md` describing the repo's rules, helpers and site quirks, ideally split into a short root file and a guide per folder (`api/`, `tests/api/`, `tests/ui/`, `plans/`, ...) so each session loads only what it needs. Agents follow them over their own defaults
+
+### Using qa without commons
+
+When `@benweese/playwright-test-commons` isn't in `package.json`, the generators copy commons' helpers into the repo instead, with `qa-support` (on Claude's PATH while the plugin is enabled):
+
+- **Two bundles, copied only when needed:** `core` (API work, titles and tags: `ApiBase`, `getBody`, `errorCheck`, `pollUntil`, `validateJsonSchema`, `createJsonSchema`, the date helpers, `uniqueEmail`, `generateTestDescription`, `TAGS`) and `ui` (`BasePage`, `expectNoA11yViolations`, `scanA11y`).
+- **Where:** `tests/support/` by default, or `.claude/qa.json` `"supportDir"`. Tests import the copy with relative paths (`../support/index.js`, `../support/ui.js`).
+- **TypeScript or JavaScript:** the TypeScript sources if the repo has a `tsconfig.json`, otherwise commons' compiled `.js` with `.d.ts` types.
+- **devDependencies:** `qa-support plan` lists what the helpers need (`ajv`, `ajv-formats`, `genson-js`, `dayjs` for core; `@axe-core/playwright` for ui; `@types/node` for TypeScript), skipping anything already installed at a compatible version and never downgrading. Claude shows you the list and **waits for your yes** before touching `package.json`.
+- **Updates:** each copy starts with a header naming the commons version and the file's hash. Later, an unmodified older copy can be refreshed with `qa-support update`; a copy you've edited is left alone. Nothing is ever overwritten, and a file `qa-support` didn't write stops the copy.
+- The helpers are generated from one pinned commons version (see `templates/commons/manifest.json`).
+
+**Test id check in CI:** that's `check-test-ids`, which stays in commons. For an id check in CI, install playwright-test-commons and run `check-test-ids`.
 
 ## Usage
 
@@ -190,7 +203,7 @@ Every guardrail in the agent prompts is a convention: the model is asked to foll
 | No fixed waits, no `networkidle`  | Enforced: lint errors                                                                                               |
 | Parallel, not serial              | Enforced (lint error in playwright-e2e-demo)                                                                        |
 | No skipped or conditional tests   | Enforced (lint error in playwright-e2e-demo)                                                                        |
-| Unique numeric test ids           | Enforced: `check-test-ids` runs in `npm run lint`                                                                   |
+| Unique numeric test ids           | Enforced where the repo runs commons' `check-test-ids` in `npm run lint` (as playwright-e2e-demo does)              |
 | Types and JSDoc on reusable code  | Enforced: `tsc` and `eslint-plugin-jsdoc` in `npm run lint`                                                         |
 | Don't raise the worker count      | Enforced by default with `workers: 2` in `playwright.config.ts`, but an agent can still pass `--workers`            |
 | Named browser sessions, cleanup   | Convention                                                                                                          |
@@ -223,7 +236,7 @@ Installed, the plugin adds about 900 tokens to every session (skill and agent de
 - **The site has real users, payments or data you can't delete,** including production. The agents create accounts and submit forms on the live site.
 - **Nobody will review the plan.** Most of the cases above were caught at review.
 - **You need one or two quick tests.** Mapping and planning cost more than writing them by hand.
-- **The test repo isn't set up for it:** not laid out like playwright-e2e-demo, not using playwright-test-commons, not TypeScript, or no lint. The generators assume the layout and the `BasePage` API, and without lint nothing enforces the conventions.
+- **The test repo isn't set up for it:** not laid out like playwright-e2e-demo, or no lint. The generators assume the layout and the `BasePage` API, and without lint nothing enforces the conventions.
 - **The environment is flaky or overloaded.** The healer will chase infrastructure failures as if they were locator problems.
 
 ## Bundled: Playwright's `playwright-cli` skill
@@ -248,6 +261,8 @@ skills/author-tests/              the full authoring flow
 skills/run-spec/  skills/bug-report/
 skills/playwright-cli/            Playwright's skill, vendored (see above)
 hooks/hooks.json                  the opt-in test-file hook (PostToolUse)
+bin/qa-support                    copies commons' helpers into a repo without commons (status / plan / install / update)
+templates/commons/                those helpers (TypeScript + compiled JS), generated from one pinned commons tag
 scripts/test-file-check.mjs       what the hook runs; test/ has its node:test suite
 docs/worked-example.md            one feature followed through every stage
 CHANGELOG.md                      what changed in each version
