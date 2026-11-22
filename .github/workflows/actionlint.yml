@@ -1,0 +1,25 @@
+# Lints GitHub Actions workflow files when they change. The Docker image is pinned by digest (Dependabot's
+# github-actions updates don't cover docker:// images: bump the tag and digest by hand).
+# Docs: https://github.com/rhysd/actionlint/blob/main/docs/usage.md ("Use actionlint on GitHub Actions").
+name: actionlint
+
+on:
+  push:
+    paths: [".github/workflows/**", ".github/actionlint.yaml"]
+  pull_request:
+    paths: [".github/workflows/**", ".github/actionlint.yaml"]
+
+permissions: {}
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check workflow files
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -color

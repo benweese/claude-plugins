@@ -1,11 +1,11 @@
 name: Docs site
 
-# Publishes the READMEs, the qa worked example, changelog and the marketplace plan to
+# Publishes every plugin's README, CHANGELOG and docs/, the marketplace changelog and plan to
 # https://code.benweese.com/playwright-ai-qa-agents/, rendered by GitHub's Markdown API.
 on:
   push:
     branches: [main]
-    paths: ["README.md", "docs/**", "plugins/*/README.md", "plugins/*/CHANGELOG.md", "plugins/*/docs/**", "scripts/build-site.mjs", "scripts/site.css", ".github/workflows/pages.yml"]
+    paths: ["README.md", "CHANGELOG.md", "docs/**", ".claude-plugin/marketplace.json", "plugins/*/README.md", "plugins/*/CHANGELOG.md", "plugins/*/docs/**", "scripts/build-site.mjs", "scripts/site.css", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -15,14 +15,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - run: node scripts/build-site.mjs _site
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
 
@@ -40,4 +40,4 @@ jobs:
       cancel-in-progress: false
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,0 +1,27 @@
+# Secret scanning on every push and PR. Personal account → no GITLEAKS_LICENSE needed.
+# Docs: https://github.com/gitleaks/gitleaks-action (README "Usage Example").
+# Third-party actions are pinned to commit SHAs; Dependabot (github-actions) keeps them current.
+name: gitleaks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # comments on the PR line where a leak is found
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

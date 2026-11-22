@@ -10,14 +10,14 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace named **`benw
 
 | Plugin | Version | What it does |
 | ------ | ------- | ------------ |
-| [qa](plugins/qa/README.md) | 1.3.0 | Plan, generate, run and heal Playwright API and UI tests in TypeScript, with a human review step between plan and code |
+| [qa](plugins/qa/README.md) | 1.5.0 | Plan, generate, run and heal Playwright API and UI tests in TypeScript, with a human review step between plan and code; review tests against the original request; accessibility and component testing agents |
 | [docs](plugins/docs/README.md) | 0.2.0 | `/docs sweep` (README, `CLAUDE.md`, JSDoc) and `/docs phase N` (end-of-phase docs update + PR) |
 | [workflow](plugins/workflow/README.md) | 0.2.0 | `/board` for GitHub Projects (configured per repo) and a lint check |
 | [guardrails](plugins/guardrails/README.md) | 0.1.1 | Blocks committing secrets (on by default); opt-in protected files, a confirm step for destructive commands, lint after edit |
 | [privacy](plugins/privacy/README.md) | 0.1.0 | `/privacy-scan`, a reviewer agent, an opt-in commit blocker and a plain-git hook for personal data |
 | [accessibility](plugins/accessibility/README.md) | 0.1.0 | `/a11y` (axe scan with plain-English fixes), an a11y-reviewer agent and a contrast calculator |
 
-Planned: more for `qa` (an a11y testing agent, a component testing agent), `docs` and `workflow`. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
+What changed: the [marketplace changelog](CHANGELOG.md) and each plugin's own CHANGELOG. Planned: more for `docs` and `workflow`. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
 
 ## Install
 
@@ -58,8 +58,21 @@ examples/sample-app/              a tiny app the plugins test themselves against
 docs/marketplace-plan.md          what's planned, the config files and the hook rules
 shared/                           code more than one plugin needs, copied into each by scripts/sync-shared.mjs
 scripts/                          docs site build, sync-shared.mjs
-.github/workflows/                validate every plugin + the marketplace; publish the docs site
+.github/workflows/                CI (below) and the docs site
+CHANGELOG.md                      marketplace-level changes (each plugin has its own)
 ```
+
+## CI
+
+| Workflow | Runs | What it checks |
+| -------- | ---- | -------------- |
+| `validate.yml` | every push and PR | the marketplace and every plugin (`claude plugin validate --strict`), plugin vs marketplace versions, the README table, the commons templates, every plugin's tests (with a real Playwright + axe run) |
+| `gitleaks.yml` | every push and PR | secrets in the commits |
+| `actionlint.yml` | when workflows change | the workflow files |
+| `codeql.yml` | PRs, pushes to `main`, weekly | code scanning: JavaScript/TypeScript and the workflows |
+| `pages.yml` | pushes to `main` that change docs | publishes the [docs site](https://code.benweese.com/playwright-ai-qa-agents/) |
+
+Every action is pinned to a commit SHA (a test fails on an unpinned `uses:`), and Dependabot keeps the pins current.
 
 ## Development
 
@@ -71,7 +84,7 @@ node --test plugins/*/test/*.test.mjs test/*.test.mjs examples/sample-app/server
 node scripts/sync-shared.mjs                     # after editing shared/ (a test fails if copies differ)
 ```
 
-**Releasing a plugin:** bump `version` in `plugins/<name>/.claude-plugin/plugin.json` and in its entry in `.claude-plugin/marketplace.json` (CI fails if they differ), add a `CHANGELOG.md` entry, push to `main`, then tag `<name>-v<version>`.
+**Releasing a plugin:** bump `version` in `plugins/<name>/.claude-plugin/plugin.json`, in its entry in `.claude-plugin/marketplace.json` and in the table above (CI fails if they differ), add a `CHANGELOG.md` entry, push to `main`, then tag `<name>-v<version>`.
 
 ## License
 

@@ -6,7 +6,7 @@ What the `benweese` marketplace will hold, how each plugin is configured per pro
 
 | Plugin | Status | Contents |
 | ------ | ------ | -------- |
-| `qa` | 1.3.0 | Works with or without playwright-test-commons (copies its helpers when it's missing). Agents: page-mapper, api/ui test planners and generators, ui-test-healer. Skills: author-tests, run-spec, bug-report, playwright-cli. Hook (opt-in): lint + `playwright test --list` after test-file edits. `/review-tests` + test-reviewer agent (against the saved request; opt-in auto-review hook). Planned: an a11y **testing** agent; a component testing agent |
+| `qa` | 1.5.0 | Works with or without playwright-test-commons (copies its helpers when it's missing). Agents: page-mapper, api/ui test planners and generators, ui-test-healer, test-reviewer, a11y-tester, component-tester. Skills: author-tests, run-spec, bug-report, review-tests, playwright-cli. Hooks (opt-in): lint + `playwright test --list` after test-file edits; auto-review after a green run. Tools: qa-support (helper copies, incl. the `a11y` bundle), qa-requirements, qa-components |
 | `docs` | 0.2.0 | `/docs sweep` and `/docs phase N` (`update-docs` kept as a deprecated alias until 0.3.0) |
 | `workflow` | 0.2.0 | `/board` (config-driven, read-only until go) and check. Planned: `/release` |
 | `accessibility` | 0.1.0 | Helps Claude **build** accessible UI: `/a11y` (one-off axe scan with the project's own Playwright, plain-English fixes), a11y-reviewer agent, `a11y-contrast`. Testing lives in `qa` |
@@ -21,7 +21,8 @@ Each plugin reads an optional file in the project's `.claude/` folder. Every fil
 
 ```jsonc
 // .claude/qa.json
-{ "version": 1, "hooks": { "lintAfterEdit": false, "autoReview": false }, "supportDir": "tests/support" }
+{ "version": 1, "hooks": { "lintAfterEdit": false, "autoReview": false }, "supportDir": "tests/support",
+  "a11y": { "wcag": "2.2", "level": "AA" }, "components": { "storiesRoot": "src", "testDir": "tests" } }
 
 // .claude/docs.json
 { "version": 1, "plan": "docs/plan.md", "changelog": "CHANGELOG.md", "runbook": "docs/ops-runbook.md",
