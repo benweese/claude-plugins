@@ -11,6 +11,7 @@ node --test examples/sample-app/server.test.mjs   # smoke tests
 | ----- | ------------ |
 | `GET /` | The list and an "Add a book" form (labelled inputs, status and error messages), and an accessible "About" `<dialog>` (focus in, trapped, Escape closes, focus returns) |
 | `GET /a11y-broken` | Accessibility fixture, broken on purpose. axe finds: no `lang`, an image without `alt`, low-contrast text, an unnamed button. Only a code review finds: an input labelled only by its placeholder, a clickable `div` (not keyboard-operable), a skipped heading level, a 16×16 target. Keyboard and layout checks find: no visible focus, a broken "Settings" modal (focus not moved in or trapped, Escape does nothing, focus not returned), fixed `px` text and a 900px-wide box that scrolls sideways at 320px |
+| `GET /playwright/gallery/index.html` | Component gallery for Playwright's built-in `mount` fixture (its gallery contract: `window.mount` / `window.unmount`, `#root`). Renders the stories in `src/components/BookList.story.js` (`Default`, `Empty`, `Loading`, `LoadFailed`, `Disabled`) of the framework-free `BookList` component. `/src/**` and `/playwright/gallery/**` are served as static files. A framework fixture (React, or whatever the next app uses) can be added later |
 | `GET /api/books` | All books |
 | `POST /api/books` `{ "title", "author" }` | Adds a book. 400 with `errors` if a field is missing or the title is over 120 characters |
 | `GET /api/books/:id` | One book, or 404 |

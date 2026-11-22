@@ -30,7 +30,13 @@ review against anything else.
    case, a missing negative check.
 5. **Extras:** tests that trace to no requirement item. Label each **useful-keep** (protects something real, e.g. a
    smoke check), **scope creep** (tests something nobody asked for), or **wrong** (asserts behaviour the request
-   contradicts). A component test that walks through a whole flow is scope creep (flows belong in e2e).
+   contradicts).
+   **Component tests cover states, not flows.** A component test (under `tests/components/`, calling `mount(…)`, a
+   Storybook story's `play`, or Testing Library's `render(…)`) is **scope creep — move it to e2e** when it does any
+   of these, even if the flow is in the request: leaves the component (navigates to an app page or another route),
+   covers more than one user goal (add a book, then remove it), or uses the real backend instead of stubbed data
+   (`page.route()`, story props, a mock). Testing one state or variant (props, empty, loading, error, disabled),
+   including one interaction inside it, is fine.
 6. **Weak tests:** tests that would still pass if the feature broke — no real assertion, asserting the mock or a
    fixture instead of the system, only checking the page loads or a 200, loose matchers (`toBeTruthy`,
    `toContain("")`, `toBeGreaterThanOrEqual(0)`), assertions on values the test itself set, skipped or `fixme` tests

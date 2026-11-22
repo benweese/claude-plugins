@@ -54,3 +54,18 @@ test("unknown routes and methods", async () => {
 	assert.equal((await fetch(`${base}/nope`)).status, 404);
 	assert.equal((await fetch(`${base}/api/books`, { method: "PUT" })).status, 405);
 });
+
+test("the component gallery and stories are served; nothing outside them", async () => {
+	const { staticFile } = await import("./server.mjs");
+	const page = await fetch(`${base}/playwright/gallery/index.html`);
+	assert.equal(page.status, 200);
+	assert.match(await page.text(), /<main id="root">/);
+	const story = await fetch(`${base}/src/components/BookList.story.js`);
+	assert.equal(story.headers.get("content-type"), "text/javascript; charset=utf-8");
+	assert.match(await story.text(), /export const LoadFailed/);
+	assert.equal((await fetch(`${base}/src/components/Missing.js`)).status, 404);
+	assert.equal(staticFile("/src/../server.mjs"), null);
+	assert.equal(staticFile("/src/%2e%2e/server.mjs"), null);
+	assert.equal(staticFile("/playwright/gallery/../../server.mjs"), null);
+	assert.equal(staticFile("/fixtures/components/README.md"), null);
+});

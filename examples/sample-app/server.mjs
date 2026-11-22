@@ -2,7 +2,9 @@
 //
 //   node examples/sample-app/server.mjs [port]      (default 4321, or PORT)
 //
-// Pages: /  (the list + an "Add a book" form), /a11y-broken (accessibility fixture: broken on purpose).  API: GET /api/books, POST /api/books {title, author},
+// Pages: /  (the list + an "Add a book" form), /a11y-broken (accessibility fixture: broken on purpose),
+// /playwright/gallery/index.html (component gallery; serves /src/** and /playwright/gallery/** as static files).
+// API: GET /api/books, POST /api/books {title, author},
 // GET /api/books/:id, DELETE /api/books/:id. Data is in memory and resets on restart. All data is made up.
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -62,6 +64,18 @@ async function readJson(req) {
 	}
 }
 
+const TYPES = { ".js": "text/javascript; charset=utf-8", ".html": "text/html; charset=utf-8" };
+
+/** /src/** and /playwright/gallery/** (the component gallery) as static files; null for anything else or outside them. */
+export function staticFile(pathname) {
+	if (!/^\/(?:src|playwright\/gallery)\//.test(pathname)) return null;
+	const rel = decodeURIComponent(pathname).replace(/^\/+/, "");
+	const file = path.resolve(here, rel);
+	const type = TYPES[path.extname(file)];
+	const inside = [path.join(here, "src") + path.sep, path.join(here, "playwright", "gallery") + path.sep].some((d) => file.startsWith(d));
+	return inside && type ? { file, type } : null;
+}
+
 /** The request handler (exported so tests can start their own server). */
 export function createApp(store = createStore()) {
 	return async (req, res) => {
@@ -72,6 +86,14 @@ export function createApp(store = createStore()) {
 		}
 		if (url.pathname === "/a11y-broken" && req.method === "GET") {
 			return send(res, 200, await readFile(path.join(here, "public", "a11y-broken.html"), "utf8"), "text/html; charset=utf-8");
+		}
+		const asset = staticFile(url.pathname);
+		if (asset && req.method === "GET") {
+			try {
+				return send(res, 200, await readFile(asset.file, "utf8"), asset.type);
+			} catch {
+				return send(res, 404, { error: "Not found" });
+			}
 		}
 		if (!match) return send(res, 404, { error: "Not found" });
 		const id = match[1] ? Number(match[1]) : null;

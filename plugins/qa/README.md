@@ -116,6 +116,7 @@ It maps the page, drafts `plans/<feature>.md` and **stops for your review**. Onc
 | `api-test-generator`                   | Writes the spec and any planned client methods (typed and documented), generates and tightens JSON schemas with `UPDATE_SCHEMAS=true`, lints and runs                                                                                                                                                                                                                                                                                                      |
 | `ui-test-generator`                    | Checks the plan was approved, then writes locators → page object → spec, using the locators the live page actually exposes, in its own browser session. Deletes anything it creates while exploring                                                                                                                                                                                                                                                        |
 | `ui-test-healer`                       | Fixes drift, ambiguity and timing failures, one test at a time, in its own browser session, with at most 3 attempts per test. Marks plan-vs-page mismatches `test.fixme()` instead of changing the assertion                                                                                                                                                                                                                                               |
+| `component-tester`                     | Writes component tests in the runner the repo already uses (see [Component tests](#component-tests)): states and variants, not flows, with accessibility checks on every state. Never picks or installs a runner |
 | `a11y-tester`                          | Writes and runs `tests/a11y/<page>.a11y.spec.ts` for one page (see [Accessibility tests](#accessibility-tests)). Test code only: a real accessibility bug stays a failing test and goes in the report |
 
 ### Skills
@@ -146,6 +147,18 @@ Ask for accessibility tests for a page (or run the `a11y-tester` agent) and it w
 The report lists failures (with the WCAG criterion and what a user would hit), findings, the baselines to review, and a short list to **check by hand** (screen reader, real 200% text and 400% zoom, whether alt text makes sense, reading order, voice control). When nothing fails it says "no automated violations found", never "accessible": automated checks cover only part of WCAG.
 
 The keyboard, media and reflow checks are the qa plugin's own `a11y` bundle (`expectTabOrder`, `expectVisibleFocus`, `expectFocusTrapped`, `expectEscapeCloses`, `withMedia`, `expectReflow`), copied into the support folder with `qa-support install --bundle a11y`, even when commons is installed. It's JavaScript with `.d.ts` types, so the same files work in TypeScript and JavaScript repos. Axe scans use commons' `expectNoA11yViolations` (or the `ui` copy).
+
+## Component tests
+
+Ask for component tests (or run the `component-tester` agent) and it:
+
+1. **Finds the runner the repo already uses**, with `qa-components detect`: Playwright's built-in `mount` with a story gallery (Playwright 1.62+), Storybook's test runner or Vitest addon, Vitest browser mode, or Vitest / Jest with jsdom and Testing Library. **It never picks one:** with none set up, it lists the options and asks. Playwright's old `@playwright/experimental-ct-*` packages were removed in 1.63; it points you to the migration guide first.
+2. **Reads Playwright's own component-testing skill from your `node_modules`** (`playwright-core/lib/tools/skills/playwright-component-testing/`). It ships with `@playwright/test`, so it always matches your version; the plugin doesn't bundle or link it.
+3. **Finds untested states.** `qa-components coverage` lists stories (`*.story.*`) that no test mounts, mounts of stories that don't exist, and common states with no story. It checks the component's props and code too: default, empty, loading, error, disabled and variants. An untested error state is the usual gap.
+4. **Writes one test per state, never a flow.** Navigating away from the component, chaining goals or calling the real backend belongs in e2e; `/review-tests` flags a component test that does any of those as scope creep.
+5. **Checks accessibility on every state it renders:** axe at your WCAG level and the `a11y` bundle's keyboard checks (Playwright), Storybook's a11y addon, or axe-core in jsdom (where the report says contrast, focus and reflow can't be checked).
+
+`.claude/qa.json` can point it at other folders: `{ "version": 1, "components": { "storiesRoot": "src", "testDir": "tests" } }` (those are the defaults).
 
 ## Test-file hook (opt-in)
 
@@ -306,13 +319,14 @@ cp "$tmp/package/LICENSE" skills/playwright-cli/
 
 ```
 .claude-plugin/plugin.json        the plugin's name, version and description
-agents/                           page-mapper, planners, generators, healer, test-reviewer, a11y-tester
+agents/                           page-mapper, planners, generators, healer, test-reviewer, a11y-tester, component-tester
 skills/author-tests/              the full authoring flow
 skills/run-spec/  skills/bug-report/
 skills/playwright-cli/            Playwright's skill, vendored (see above)
 hooks/hooks.json                  the opt-in test-file hook (PostToolUse)
 bin/qa-requirements               saves / shows the original request (.claude/qa/requirements.md)
 scripts/review-guard.mjs          the opt-in auto-review hook (PostToolUse on Bash)
+bin/qa-components                 detects the component-test runner; maps stories to tests (detect / coverage)
 bin/qa-support                    copies commons' helpers into a repo without commons (status / plan / install / update)
 templates/commons/                those helpers (TypeScript + compiled JS), generated from one pinned commons tag
 templates/a11y/                   the plugin's own keyboard / media / reflow checks (JS + .d.ts)
