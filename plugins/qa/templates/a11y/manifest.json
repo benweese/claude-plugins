@@ -1,0 +1,17 @@
+{
+	"source": "playwright-qa-agents/qa",
+	"tag": "v1.4.0",
+	"note": "Owned by the qa plugin (not commons). The same .js + .d.ts go to TypeScript and JavaScript repos, and they're copied even when commons is installed.",
+	"bundles": {
+		"a11y": {
+			"entry": "a11y",
+			"devDependencies": {
+				"@playwright/test": ">=1.65.0"
+			}
+		}
+	},
+	"files": {
+		"a11y.js": { "bundle": "a11y", "lang": "any" },
+		"a11y.d.ts": { "bundle": "a11y", "lang": "any" }
+	}
+}

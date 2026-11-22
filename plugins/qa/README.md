@@ -87,12 +87,13 @@ It should name six agents (`page-mapper`, `api-test-planner`, `ui-test-planner`,
 
 When `@benweese/playwright-test-commons` isn't in `package.json`, the generators copy commons' helpers into the repo instead, with `qa-support` (on Claude's PATH while the plugin is enabled):
 
-- **Two bundles, copied only when needed:** `core` (API work, titles and tags: `ApiBase`, `getBody`, `errorCheck`, `pollUntil`, `validateJsonSchema`, `createJsonSchema`, the date helpers, `uniqueEmail`, `generateTestDescription`, `TAGS`) and `ui` (`BasePage`, `expectNoA11yViolations`, `scanA11y`).
+- **Two commons bundles, copied only when needed:** `core` (API work, titles and tags: `ApiBase`, `getBody`, `errorCheck`, `pollUntil`, `validateJsonSchema`, `createJsonSchema`, the date helpers, `uniqueEmail`, `generateTestDescription`, `TAGS`) and `ui` (`BasePage`, `expectNoA11yViolations`, `scanA11y`).
 - **Where:** `tests/support/` by default, or `.claude/qa.json` `"supportDir"`. Tests import the copy with relative paths (`../support/index.js`, `../support/ui.js`).
 - **TypeScript or JavaScript:** the TypeScript sources if the repo has a `tsconfig.json`, otherwise commons' compiled `.js` with `.d.ts` types.
 - **devDependencies:** `qa-support plan` lists what the helpers need (`ajv`, `ajv-formats`, `genson-js`, `dayjs` for core; `@axe-core/playwright` for ui; `@types/node` for TypeScript), skipping anything already installed at a compatible version and never downgrading. Claude shows you the list and **waits for your yes** before touching `package.json`.
 - **Updates:** each copy starts with a header naming the commons version and the file's hash. Later, an unmodified older copy can be refreshed with `qa-support update`; a copy you've edited is left alone. Nothing is ever overwritten, and a file `qa-support` didn't write stops the copy.
 - The helpers are generated from one pinned commons version (see `templates/commons/manifest.json`).
+- A third bundle, `a11y`, is the qa plugin's own (see [Accessibility tests](#accessibility-tests)); it's copied the same way, with or without commons.
 
 **Test id check in CI:** that's `check-test-ids`, which stays in commons. For an id check in CI, install playwright-test-commons and run `check-test-ids`.
 
@@ -115,6 +116,7 @@ It maps the page, drafts `plans/<feature>.md` and **stops for your review**. Onc
 | `api-test-generator`                   | Writes the spec and any planned client methods (typed and documented), generates and tightens JSON schemas with `UPDATE_SCHEMAS=true`, lints and runs                                                                                                                                                                                                                                                                                                      |
 | `ui-test-generator`                    | Checks the plan was approved, then writes locators → page object → spec, using the locators the live page actually exposes, in its own browser session. Deletes anything it creates while exploring                                                                                                                                                                                                                                                        |
 | `ui-test-healer`                       | Fixes drift, ambiguity and timing failures, one test at a time, in its own browser session, with at most 3 attempts per test. Marks plan-vs-page mismatches `test.fixme()` instead of changing the assertion                                                                                                                                                                                                                                               |
+| `a11y-tester`                          | Writes and runs `tests/a11y/<page>.a11y.spec.ts` for one page (see [Accessibility tests](#accessibility-tests)). Test code only: a real accessibility bug stays a failing test and goes in the report |
 
 ### Skills
 
@@ -127,6 +129,23 @@ It maps the page, drafts `plans/<feature>.md` and **stops for your review**. Onc
 | `/qa:playwright-cli`                   | Playwright's own skill for driving a browser with `playwright-cli`, used by the page-mapper, UI generator and healer (see below) |
 
 Lint (`/workflow:check`) and docs upkeep (`/docs:update-docs`) are in the [workflow](../workflow/README.md) and [docs](../docs/README.md) plugins.
+
+## Accessibility tests
+
+Ask for accessibility tests for a page (or run the `a11y-tester` agent) and it writes `tests/a11y/<page>.a11y.spec.ts`:
+
+- **Axe** at the repo's WCAG target, as the page loads and in each state with new content (an open dialog, a failed submit). Set the target in `.claude/qa.json`; the default is 2.2 AA:
+  ```json
+  { "version": 1, "a11y": { "wcag": "2.2", "level": "AA" } }
+  ```
+- **Keyboard:** the key elements of each task are reached by Tab in order (their relative order, not the page's full tab sequence), controls show a visible focus indicator, and dialogs keep focus inside, close on Escape and return focus to the button that opened them.
+- **ARIA snapshots** (`toMatchAriaSnapshot`, saved as files) of stable regions only: landmarks, forms and dialogs, never whole pages with prices, dates or counts. **You review each new baseline**; it records what the page does today, bugs included.
+- **User preferences:** reduced motion, more contrast and forced colors.
+- **Reflow:** 320 CSS px wide with the root font at 200%. That's an **approximation** of the OS text setting and browser zoom, labelled as one. It fails on sideways scrolling or clipped text. Text with fixed px font sizes can't grow with the root, so it's reported as a finding, not a failure.
+
+The report lists failures (with the WCAG criterion and what a user would hit), findings, the baselines to review, and a short list to **check by hand** (screen reader, real 200% text and 400% zoom, whether alt text makes sense, reading order, voice control). When nothing fails it says "no automated violations found", never "accessible": automated checks cover only part of WCAG.
+
+The keyboard, media and reflow checks are the qa plugin's own `a11y` bundle (`expectTabOrder`, `expectVisibleFocus`, `expectFocusTrapped`, `expectEscapeCloses`, `withMedia`, `expectReflow`), copied into the support folder with `qa-support install --bundle a11y`, even when commons is installed. It's JavaScript with `.d.ts` types, so the same files work in TypeScript and JavaScript repos. Axe scans use commons' `expectNoA11yViolations` (or the `ui` copy).
 
 ## Test-file hook (opt-in)
 
@@ -287,7 +306,7 @@ cp "$tmp/package/LICENSE" skills/playwright-cli/
 
 ```
 .claude-plugin/plugin.json        the plugin's name, version and description
-agents/                           page-mapper, planners, generators, healer
+agents/                           page-mapper, planners, generators, healer, test-reviewer, a11y-tester
 skills/author-tests/              the full authoring flow
 skills/run-spec/  skills/bug-report/
 skills/playwright-cli/            Playwright's skill, vendored (see above)
@@ -296,6 +315,7 @@ bin/qa-requirements               saves / shows the original request (.claude/qa
 scripts/review-guard.mjs          the opt-in auto-review hook (PostToolUse on Bash)
 bin/qa-support                    copies commons' helpers into a repo without commons (status / plan / install / update)
 templates/commons/                those helpers (TypeScript + compiled JS), generated from one pinned commons tag
+templates/a11y/                   the plugin's own keyboard / media / reflow checks (JS + .d.ts)
 scripts/test-file-check.mjs       what the hook runs; test/ has its node:test suite
 docs/worked-example.md            one feature followed through every stage
 CHANGELOG.md                      what changed in each version

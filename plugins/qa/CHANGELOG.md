@@ -2,7 +2,20 @@
 
 All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
 
-## [1.3.0] - 2026-11-22
+## [1.4.0] - 2026-11-21
+
+### Added
+
+- **`a11y-tester`** agent: writes and runs `tests/a11y/<page>.a11y.spec.ts` for one page: axe at the repo's WCAG target (`.claude/qa.json` `"a11y": { "wcag": "2.2", "level": "AA" }`, default 2.2 AA), keyboard (relative tab order of each task's key elements, visible focus, dialogs that trap focus, close on Escape and return focus), ARIA file snapshots of stable regions only (baselines reviewed by the user), reduced motion / more contrast / forced colors, and reflow at 320px with 200% root text (labelled an approximation). Test code only; real accessibility bugs stay failing tests. The report has failures, findings, a manual checklist, and says "no automated violations found", never "accessible".
+- **`a11y` helper bundle** (the plugin's own, not commons): `expectTabOrder`, `expectVisibleFocus`, `expectFocusTrapped`, `expectEscapeCloses`, `withMedia`, `expectReflow`. Fixed px font sizes are reported as `a11y-finding` annotations, not failures. JS + `.d.ts` for TypeScript and JavaScript repos. `qa-support install --bundle a11y` copies it, even when commons is installed; `update` refreshes unmodified copies.
+- `author-tests` routes accessibility requests to the `a11y-tester`.
+- Sample app: an accessible About dialog on `/`; on `/a11y-broken`, no visible focus, fixed px text, a box too wide for 320px and a modal with no focus handling. A real Playwright run (CI) checks the helpers pass on the first and fail on the second.
+
+### Fixed
+
+- Sample app `/`: at 320px with 200% text, the form inputs overflowed by a few pixels (`box-sizing`) and, with wider fonts such as DejaVu Sans on CI, the heading's one long word didn't fit (`overflow-wrap: break-word`). The new reflow check found both; its failure message names the elements that stick out.
+
+## [1.3.0] - 2026-11-21
 
 ### Added
 

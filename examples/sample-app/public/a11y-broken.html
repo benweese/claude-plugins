@@ -2,7 +2,14 @@
 <!-- A deliberately broken page: fixtures for accessibility checks (each problem is listed in the README). -->
 <html>
 <head><meta charset="utf-8"><title>Broken on purpose</title>
-<style>.faint { color: #9a9a9a; background: #ffffff; } .tiny { width: 16px; height: 16px; padding: 0; }</style>
+<style>
+	.faint { color: #9a9a9a; background: #ffffff; } .tiny { width: 16px; height: 16px; padding: 0; }
+	button:focus, input:focus { outline: none; } /* no visible focus */
+	.fixed { font-size: 14px; } /* fixed px: doesn't grow with the root font size */
+	.wide { width: 900px; } /* forces sideways scrolling at 320px */
+	.modal { display: none; position: fixed; inset: 20%; background: #fff; border: 1px solid #333; padding: 1rem; }
+	.modal.open { display: block; }
+</style>
 </head>
 <body>
 	<h3>Add a book</h3>
@@ -11,5 +18,17 @@
 	<p class="faint">Low-contrast help text that is hard to read.</p>
 	<div onclick="alert('saved')">Save</div>
 	<button class="tiny"></button>
+	<p class="fixed wide">Fixed-size text in a box that's too wide for a phone.</p>
+	<button type="button" id="modal-open">Open settings</button>
+	<!-- A broken modal: focus isn't moved in or kept there, Escape does nothing, focus isn't returned. -->
+	<div class="modal" id="modal" role="dialog" aria-label="Settings">
+		<label for="setting">Setting</label> <input id="setting">
+		<button type="button" id="modal-close">Close</button>
+	</div>
+	<a href="#top">Back to top</a>
+	<script>
+		document.getElementById("modal-open").onclick = () => document.getElementById("modal").classList.add("open");
+		document.getElementById("modal-close").onclick = () => document.getElementById("modal").classList.remove("open");
+	</script>
 </body>
 </html>
