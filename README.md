@@ -13,9 +13,10 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace named **`benw
 | [qa](plugins/qa/README.md) | 1.1.0 | Plan, generate, run and heal Playwright API and UI tests in TypeScript, with a human review step between plan and code |
 | [docs](plugins/docs/README.md) | 0.2.0 | `/docs sweep` (README, `CLAUDE.md`, JSDoc) and `/docs phase N` (end-of-phase docs update + PR) |
 | [workflow](plugins/workflow/README.md) | 0.2.0 | `/board` for GitHub Projects (configured per repo) and a lint check |
-| [guardrails](plugins/guardrails/README.md) | 0.1.0 | Blocks committing secrets (on by default); opt-in protected files, a confirm step for destructive commands, lint after edit |
+| [guardrails](plugins/guardrails/README.md) | 0.1.1 | Blocks committing secrets (on by default); opt-in protected files, a confirm step for destructive commands, lint after edit |
+| [privacy](plugins/privacy/README.md) | 0.1.0 | `/privacy-scan`, a reviewer agent, an opt-in commit blocker and a plain-git hook for personal data |
 
-Planned: `accessibility` and `privacy`, plus more for `qa`, `docs` and `workflow`. They're added here as each one ships. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
+Planned: `accessibility`, plus more for `qa`, `docs` and `workflow`. They're added here as each one ships. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
 
 ## Install
 
@@ -33,6 +34,7 @@ claude plugin install qa@benweese
 claude plugin install docs@benweese
 claude plugin install workflow@benweese
 claude plugin install guardrails@benweese
+claude plugin install privacy@benweese
 ```
 
 Add `--scope project` to record a plugin in the repo's `.claude/settings.json` for everyone who opens it. Where your client has the `/plugin` command, `/plugin install <plugin> --marketplace benweese/playwright-ai-qa-agents` does the same.
@@ -52,7 +54,8 @@ Claude Code runs a plugin's hooks in every project where the plugin is enabled. 
 plugins/<name>/                   one plugin each: .claude-plugin/plugin.json, README, CHANGELOG, agents/ skills/ hooks/
 examples/sample-app/              a tiny app the plugins test themselves against (no dependencies)
 docs/marketplace-plan.md          what's planned, the config files and the hook rules
-scripts/                          docs site build
+shared/                           code more than one plugin needs, copied into each by scripts/sync-shared.mjs
+scripts/                          docs site build, sync-shared.mjs
 .github/workflows/                validate every plugin + the marketplace; publish the docs site
 ```
 
@@ -62,7 +65,8 @@ scripts/                          docs site build
 claude plugin validate .                         # the marketplace
 claude plugin validate plugins/<name> --strict   # one plugin
 node examples/sample-app/server.mjs              # the sample app on http://localhost:4321
-node --test plugins/*/test/*.test.mjs examples/sample-app/server.test.mjs   # hook + sample-app tests
+node --test plugins/*/test/*.test.mjs test/*.test.mjs examples/sample-app/server.test.mjs   # all tests
+node scripts/sync-shared.mjs                     # after editing shared/ (a test fails if copies differ)
 ```
 
 **Releasing a plugin:** bump `version` in `plugins/<name>/.claude-plugin/plugin.json` and in its entry in `.claude-plugin/marketplace.json` (CI fails if they differ), add a `CHANGELOG.md` entry, push to `main`, then tag `<name>-v<version>`.

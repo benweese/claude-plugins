@@ -5,12 +5,15 @@
 //    built-in patterns. A match → deny (the commit doesn't run), secrets masked.
 //  - dangerous (opt-in): force-push to the default branch, reset --hard, clean -fd, checkout -- ., restore .,
 //    rm -rf on / ~ $HOME or the repo root → "ask" (the normal permission prompt, with the reason).
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { decision, defaultBranch, finish, git, gitSub, loadConfig, projectDirOf, readInput, splitCommands, words } from "./lib.mjs";
+import { commitPlan, contentToCommit } from "./commit-content.mjs";
+
+export { commitPlan, addedLines, contentToCommit } from "./commit-content.mjs";
 
 /** Built-in secret patterns (used when gitleaks isn't installed). */
 export const SECRET_PATTERNS = [
@@ -25,77 +28,6 @@ export const SECRET_PATTERNS = [
 ];
 
 const mask = (s) => `${s.slice(0, 4)}…(${s.length} chars)`;
-
-/** What a command line will commit: {commit, all, addAll, addPaths, addTracked}. */
-export function commitPlan(line) {
-	const plan = { commit: false, all: false, addAll: false, addTracked: false, addPaths: [] };
-	for (const seg of splitCommands(line)) {
-		const g = gitSub(seg);
-		if (!g) continue;
-		if (g.sub === "add") {
-			for (const a of g.args) {
-				if (a === "-A" || a === "--all" || a === ".") plan.addAll = true;
-				else if (a === "-u" || a === "--update") plan.addTracked = true;
-				else if (!a.startsWith("-")) plan.addPaths.push(a);
-			}
-		}
-		if (g.sub === "commit") {
-			plan.commit = true;
-			for (const a of g.args) if (a === "--all" || /^-[A-Za-z]*a[A-Za-z]*$/.test(a)) plan.all = true;
-			break; // later segments run after the commit
-		}
-	}
-	return plan;
-}
-
-/** Added lines per file from a unified diff (-U0): [{file, lines: [{n, text}]}]. */
-export function addedLines(diff) {
-	const files = [];
-	let cur = null;
-	let n = 0;
-	for (const l of diff.split("\n")) {
-		if (l.startsWith("+++ ")) {
-			const f = l.slice(4).replace(/^b\//, "");
-			cur = f === "/dev/null" ? null : { file: f, lines: [] };
-			if (cur) files.push(cur);
-		} else if (l.startsWith("@@")) {
-			const m = /\+(\d+)/.exec(l);
-			n = m ? Number(m[1]) : 0;
-		} else if (cur && l.startsWith("+")) {
-			cur.lines.push({ n: n++, text: l.slice(1) });
-		} else if (cur && !l.startsWith("-") && !l.startsWith("\\")) {
-			n++;
-		}
-	}
-	return files;
-}
-
-/** Everything the commit will contain, as [{file, lines:[{n,text}]}]. */
-export function contentToCommit(repo, plan) {
-	const chunks = addedLines(git(repo, ["diff", "--cached", "-U0", "--no-color"]));
-	const tracked = plan.all || plan.addAll || plan.addTracked ? [] : plan.addPaths;
-	if (plan.all || plan.addAll || plan.addTracked || plan.addPaths.length) {
-		const args = ["diff", "-U0", "--no-color"];
-		if (!(plan.all || plan.addAll || plan.addTracked)) args.push("--", ...tracked);
-		chunks.push(...addedLines(git(repo, args)));
-	}
-	if (plan.addAll || plan.addPaths.length) {
-		const args = ["ls-files", "--others", "--exclude-standard"];
-		if (!plan.addAll) args.push("--", ...plan.addPaths);
-		for (const f of git(repo, args).split("\n").filter(Boolean)) {
-			const abs = path.join(repo, f);
-			try {
-				if (statSync(abs).size > 1_000_000) continue;
-				const text = readFileSync(abs, "utf8");
-				if (text.includes("\u0000")) continue; // binary
-				chunks.push({ file: f, lines: text.split("\n").map((t, i) => ({ n: i + 1, text: t })) });
-			} catch {
-				/* unreadable: skip */
-			}
-		}
-	}
-	return chunks;
-}
 
 /** Built-in scan: [{file, line, rule, sample}]. */
 export function scanBuiltIn(chunks) {

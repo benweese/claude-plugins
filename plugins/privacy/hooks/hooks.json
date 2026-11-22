@@ -1,0 +1,11 @@
+{
+	"description": "privacy: before Claude runs git commit, block personal data in what will be committed. Opt-in per project via .claude/privacy.json (\"commitHook\": true).",
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Bash",
+				"hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-bash.mjs\"", "timeout": 30 }]
+			}
+		]
+	}
+}
