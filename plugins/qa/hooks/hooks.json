@@ -1,5 +1,5 @@
 {
-	"description": "qa: after a Playwright test file is edited, lint it and check `playwright test --list` loads it. Opt-in per project via .claude/qa.json.",
+	"description": "qa: after a Playwright test file is edited, lint it and check `playwright test --list` loads it; after the suite goes green, ask for a /review-tests run. Both opt-in per project via .claude/qa.json.",
 	"hooks": {
 		"PostToolUse": [
 			{
@@ -9,6 +9,16 @@
 						"type": "command",
 						"command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/test-file-check.mjs\"",
 						"timeout": 70
+					}
+				]
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/review-guard.mjs\"",
+						"timeout": 20
 					}
 				]
 			}

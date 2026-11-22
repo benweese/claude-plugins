@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+// qa-requirements: saves and shows the original request for a test task (.claude/qa/requirements.md).
+//   qa-requirements save chat            the request, verbatim, from stdin
+//   qa-requirements save issue <n>       a GitHub issue's title + body (acceptance criteria included), via gh
+//   qa-requirements save file <path>     a requirements file's contents
+//   qa-requirements show                 the saved requirement + its task, branch and source
+//   qa-requirements reviewed             record that the current test files were reviewed (manual review)
+// Warns on every run if .claude/qa/requirements.md isn't gitignored.
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { currentBranch, ignoreWarning, issueText, readRequirements, readState, saveRequirements, testFilesHash, writeState } from "../scripts/requirements.mjs";
+
+export function run(root, args, stdinText = "") {
+	const out = [];
+	const [cmd, kind, ref] = args;
+	if (cmd === "save") {
+		let text;
+		if (kind === "chat") text = stdinText;
+		else if (kind === "issue" && ref) text = issueText(root, ref);
+		else if (kind === "file" && ref) text = readFileSync(path.resolve(root, ref), "utf8");
+		else throw new Error("save chat (stdin) | save issue <n> | save file <path>");
+		const r = saveRequirements(root, { source: kind, ref: ref || "", text });
+		out.push(`Saved the ${kind} requirement to ${r.file} (task ${r.task}, branch ${r.branch}).`);
+	} else if (cmd === "show") {
+		const r = readRequirements(root);
+		if (!r) out.push("No saved requirement (.claude/qa/requirements.md is missing or not in the qa-requirements format).");
+		else {
+			const branch = currentBranch(root);
+			out.push(`Task ${r.task} · source ${r.source}${r.ref ? ` ${r.ref}` : ""} · branch ${r.branch} · saved ${r.saved}`);
+			if (r.branch !== branch) out.push(`This requirement was saved on branch "${r.branch}", but you're on "${branch}" — that's a different task. Save this task's requirement first.`);
+			out.push("---", r.body);
+		}
+	} else if (cmd === "reviewed") {
+		const r = readRequirements(root);
+		if (!r) throw new Error("No saved requirement to mark as reviewed.");
+		const prev = readState(root);
+		const same = prev && prev.task === r.task;
+		writeState(root, { task: r.task, reviewedHash: testFilesHash(root).hash, autoCount: same ? prev.autoCount || 0 : 0 });
+		out.push("Recorded the review of the current test files.");
+	} else {
+		throw new Error("usage: qa-requirements save chat|issue <n>|file <path> | show | reviewed");
+	}
+	const w = ignoreWarning(root);
+	if (w) out.push(w);
+	return out.join("\n");
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	const args = process.argv.slice(2);
+	let stdin = "";
+	if (args[0] === "save" && args[1] === "chat") for await (const c of process.stdin) stdin += c;
+	try {
+		console.log(run(process.cwd(), args, stdin));
+	} catch (e) {
+		console.error(e.message);
+		process.exit(2);
+	}
+}
