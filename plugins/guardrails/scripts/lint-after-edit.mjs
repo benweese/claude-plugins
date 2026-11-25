@@ -6,8 +6,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { finish, loadConfig, projectDirOf, readInput } from "./lib.mjs";
+import { isMain } from "./is-main.mjs";
 
 const CAP_MS = 60_000;
 const JS_TS = /\.(c|m)?(j|t)sx?$/;
@@ -57,4 +57,4 @@ export function lintAfterEdit(input, env = process.env, now = Date.now) {
 	return { exit: 2, stderr: `guardrails lint: ${rel} (${took})\n${out}` };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) finish(lintAfterEdit(await readInput()));
+if (isMain(process.argv[1], import.meta.url)) finish(lintAfterEdit(await readInput()));
