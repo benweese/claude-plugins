@@ -3,9 +3,9 @@
 // `git commit`, scans what will be committed (index; tracked changes for -a/--all; paths a chained
 // `git add` stages) for personal data. A match → deny, values hidden. No network: a URL denylist is read
 // from its local cache (`/privacy-scan refresh`). Hook format: https://code.claude.com/docs/en/hooks
-import { fileURLToPath } from "node:url";
 import { commitPlan, contentToCommit } from "./commit-content.mjs";
 import { formatFindings, loadDenylist, loadPrivacyConfig, scanChunks } from "./detectors.mjs";
+import { isMain } from "./is-main.mjs";
 
 /** The whole hook, as data: {exit, json?}. */
 export function privacyPreBash(input, env = process.env) {
@@ -38,7 +38,7 @@ async function main() {
 	}
 	const r = privacyPreBash(input);
 	if (r.json) process.stdout.write(`${JSON.stringify(r.json)}\n`);
-	process.exit(r.exit);
+	process.exitCode = r.exit; // not process.exit(): let stdout finish writing on a pipe
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+if (isMain(process.argv[1], import.meta.url)) await main();

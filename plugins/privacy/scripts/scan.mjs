@@ -8,9 +8,9 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { addedLines, git } from "./commit-content.mjs";
 import { CACHE_FILE, formatFindings, isGitignored, loadDenylist, loadPrivacyConfig, scanChunks } from "./detectors.mjs";
+import { isMain } from "./is-main.mjs";
 
 const readChunk = (root, rel) => {
 	try {
@@ -81,7 +81,7 @@ export function scan(projectDir, args, cfg = loadPrivacyConfig(projectDir)) {
 	return { code: 1, text: `${checked}\n${findings.length} finding(s) (values hidden):\n${formatFindings(findings, 100)}${head ? `\n${head}` : ""}` };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+async function main() {
 	const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 	const args = process.argv.slice(2);
 	if (args[0] === "refresh") {
@@ -89,11 +89,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 			console.log(await refresh(projectDir, loadPrivacyConfig(projectDir)));
 		} catch (e) {
 			console.log(`Refresh failed: ${e.message}`);
-			process.exit(2);
+			process.exitCode = 2; // not process.exit(): let stdout finish writing on a pipe
 		}
-	} else {
-		const r = scan(projectDir, args);
-		console.log(r.text);
-		process.exit(r.code);
+		return;
 	}
+	const r = scan(projectDir, args);
+	console.log(r.text);
+	process.exitCode = r.code;
 }
+
+if (isMain(process.argv[1], import.meta.url)) await main();
