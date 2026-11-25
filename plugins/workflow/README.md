@@ -44,7 +44,7 @@ Working rules for this project (workflow plugin, .claude/workflow.json):
 ```
 
 - **No file**, or **`"principles"` is `false` or absent:** nothing happens.
-- **File present but invalid** (not JSON, not an object, `"version"` isn't `1`, `"principles"` isn't `true` or `false` — e.g. `"true"` or `1` — or it can't be read): no rules, and you see a one-line warning saying why (`workflow: .claude/workflow.json is invalid (…), session rules are off`). The warning is shown to you only; nothing is added to Claude's context. A leading byte-order mark (BOM) is fine.
+- **File present but invalid** (not JSON, not an object, `"version"` isn't `1`, `"principles"` isn't `true` or `false` — e.g. `"true"` or `1` — or it can't be read): no rules, and you see a one-line warning saying why (`workflow: .claude/workflow.json is invalid (…), session rules are off`). The warning is shown to you only; nothing is added to Claude's context. It comes back on every session start, resume, `/clear` and compaction until the file is fixed. A leading byte-order mark (BOM) is fine.
 - **Other keys are ignored**, so later workflow features can keep their settings in the same file.
 
 These rules are instructions in Claude's context, not enforcement: nothing stops a tool call that breaks one. For hard stops, use hooks that block (for example the `guardrails` plugin) and CI.
