@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const COPIES = {
-	"shared/commit-content.mjs": ["plugins/guardrails/scripts/commit-content.mjs", "plugins/privacy/scripts/commit-content.mjs"]
+	"shared/commit-content.mjs": ["plugins/guardrails/scripts/commit-content.mjs", "plugins/privacy/scripts/commit-content.mjs"],
+	// Each plugin's hook scripts and bin tools import their own copy: `isMain(process.argv[1], import.meta.url)`.
+	"shared/is-main.mjs": []
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
