@@ -8,7 +8,7 @@ What the `benweese` marketplace will hold, how each plugin is configured per pro
 | ------ | ------ | -------- |
 | `qa` | 1.5.0 | Works with or without playwright-test-commons (copies its helpers when it's missing). Agents: page-mapper, api/ui test planners and generators, ui-test-healer, test-reviewer, a11y-tester, component-tester. Skills: author-tests, run-spec, bug-report, review-tests, playwright-cli. Hooks (opt-in): lint + `playwright test --list` after test-file edits; auto-review after a green run. Tools: qa-support (helper copies, incl. the `a11y` bundle), qa-requirements, qa-components |
 | `docs` | 0.2.0 | `/docs sweep` and `/docs phase N` (`update-docs` kept as a deprecated alias until 0.3.0) |
-| `workflow` | 0.2.0 | `/board` (config-driven, read-only until go) and check. Planned: `/release` |
+| `workflow` | 0.3.0 | `/board` (config-driven, read-only until go) and check. Hook (opt-in): session rules at SessionStart. Planned: `/release` |
 | `accessibility` | 0.1.0 | Helps Claude **build** accessible UI: `/a11y` (one-off axe scan with the project's own Playwright, plain-English fixes), a11y-reviewer agent, `a11y-contrast`. Testing lives in `qa` |
 | `privacy` | 0.1.0 | `/privacy-scan`, privacy-reviewer agent, opt-in commit blocker, plain-git hook installer |
 | `guardrails` | 0.1.1 | Secret blocker before `git commit` (on by default); opt-in protected files, dangerous-command confirm, lint after edit |
@@ -32,6 +32,9 @@ Each plugin reads an optional file in the project's `.claude/` folder. Every fil
 // .claude/board.json
 { "version": 1, "owner": "<github-user>", "project": 1, "repo": null, "phaseField": "Phase", "maxReady": 3, "maxInProgress": 1, "branch": "{number}-{slug}",
   "statuses": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In progress", "review": "Review", "done": "Done" } }
+
+// .claude/workflow.json (committed; other keys are ignored, so later features can add theirs)
+{ "version": 1, "principles": false }
 
 // .claude/a11y.json
 { "version": 1, "level": "AA", "wcag": "2.2", "projectList": null }

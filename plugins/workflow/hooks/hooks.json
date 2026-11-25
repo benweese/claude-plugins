@@ -1,0 +1,11 @@
+{
+	"description": "workflow: at session start, adds the project's working rules to Claude's context. Opt-in per project via .claude/workflow.json.",
+	"hooks": {
+		"SessionStart": [
+			{
+				"matcher": "startup|resume|clear|compact",
+				"hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/principles.mjs\"", "timeout": 10 }]
+			}
+		]
+	}
+}

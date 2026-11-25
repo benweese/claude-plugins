@@ -21,6 +21,34 @@ Or `claude plugin marketplace add benweese/claude-plugins`, then `claude plugin 
 
 Planned: `/release`.
 
+## Session rules (opt-in hook)
+
+A `SessionStart` hook that adds a short set of working rules to Claude's context at the start of each session, and again after `/clear`, a compaction or a resume. It's off unless the project turns it on in a committed `.claude/workflow.json`:
+
+```json
+{ "version": 1, "principles": true }
+```
+
+When on, Claude starts with:
+
+```text
+Working rules for this project (workflow plugin, .claude/workflow.json):
+1. Verify before saying done.
+2. Never invent paths, output or test results.
+3. Say when a premise looks wrong before building around it.
+4. Touch only what the task needs.
+5. If a check fails, fix the cause; never weaken or skip the check.
+6. Ask, don't assume.
+7. If known gates remain, stop and report the blockers before opening a PR.
+8. Open draft PRs only when asked.
+```
+
+- **No file**, or **`"principles"` is `false` or absent:** nothing happens.
+- **File present but invalid** (not JSON, not an object, `"version"` isn't `1`, `"principles"` isn't `true` or `false` — e.g. `"true"` or `1` — or it can't be read): no rules, and you see a one-line warning saying why (`workflow: .claude/workflow.json is invalid (…), session rules are off`). The warning is shown to you only; nothing is added to Claude's context. A leading byte-order mark (BOM) is fine.
+- **Other keys are ignored**, so later workflow features can keep their settings in the same file.
+
+These rules are instructions in Claude's context, not enforcement: nothing stops a tool call that breaks one. For hard stops, use hooks that block (for example the `guardrails` plugin) and CI.
+
 ## Configure `/board`
 
 `/board` needs `.claude/board.json` in the repo. Without a valid one it stops and prints this template; it never guesses a project:
