@@ -2,6 +2,13 @@
 
 All notable changes to the `workflow` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.3.0] - 2026-11-25
+
+### Added
+
+- **Session rules** (opt-in `SessionStart` hook on startup, resume, `/clear` and compaction): adds 8 working rules to Claude's context, such as "verify before saying done" and "if a check fails, fix the cause; never weaken or skip the check". Turned on by a committed `.claude/workflow.json` with `"version": 1` and `"principles": true`. No file, or `principles` false/absent → nothing; an invalid file (including `principles` that isn't a boolean) → a warning shown to the user, no rules. Unknown keys are ignored; a leading BOM is fine; the hook works when run through a symlinked path.
+- The rules follow patterns from [ChrisTitusTech/titstack](https://github.com/ChrisTitusTech/titstack)'s workflow docs (patterns only; nothing copied).
+
 ## [0.2.0] - 2026-11-21
 
 ### Added

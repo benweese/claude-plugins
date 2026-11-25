@@ -1,7 +1,7 @@
 {
 	"name": "workflow",
-	"version": "0.2.0",
-	"description": "Repo workflow skills: /board (a GitHub Project board: show, check blockers, start an issue; configured in .claude/board.json) and check (run the repo's lint).",
+	"version": "0.3.0",
+	"description": "Repo workflow: /board (a GitHub Project board: show, check blockers, start an issue; configured in .claude/board.json), check (run the repo's lint), and opt-in session rules (a SessionStart hook that adds working rules to Claude's context; .claude/workflow.json).",
 	"author": {
 		"name": "Ben Weese",
 		"url": "https://benweese.com"
@@ -11,6 +11,7 @@
 	"license": "MIT",
 	"keywords": [
 		"workflow",
-		"lint"
+		"lint",
+		"hooks"
 	]
 }
