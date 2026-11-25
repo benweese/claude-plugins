@@ -6,7 +6,7 @@
 // Hook format: https://code.claude.com/docs/en/hooks
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { isMain } from "./is-main.mjs";
 import { currentBranch, ignoreWarning, readRequirements, readState, testFilesHash, writeState } from "./requirements.mjs";
 
 export const MAX_AUTO = 2;
@@ -64,7 +64,7 @@ export function reviewGuard(input, env = process.env) {
 	);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+async function main() {
 	let raw = "";
 	for await (const c of process.stdin) raw += c;
 	let input = {};
@@ -75,5 +75,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	}
 	const r = reviewGuard(input);
 	if (r.json && Object.keys(r.json).length) process.stdout.write(`${JSON.stringify(r.json)}\n`);
-	process.exit(r.exit);
+	process.exitCode = r.exit; // not process.exit(): let stdout finish writing on a pipe
 }
+
+if (isMain(process.argv[1], import.meta.url)) await main();

@@ -8,7 +8,7 @@
 //          --tests <dir> (default "components.testDir", else tests), --json. Runs in the repo root.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { isMain } from "../scripts/is-main.mjs";
 
 const SKILL = path.join("lib", "tools", "skills", "playwright-component-testing", "SKILL.md");
 const SKIP = new Set(["node_modules", ".git", "dist", "build", "coverage", "test-results", "playwright-report", ".next"]);
@@ -162,7 +162,7 @@ export function coverageLines(c) {
 	return out;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+async function main() {
 	const args = process.argv.slice(2);
 	const flag = (n) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 	const root = process.cwd();
@@ -173,6 +173,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 		console.log(args.includes("--json") ? JSON.stringify(r, null, 2) : (cmd === "detect" ? detectLines(r) : coverageLines(r)).join("\n"));
 	} catch (e) {
 		console.error(e.message);
-		process.exit(2);
+		process.exitCode = 2; // not process.exit(): let output finish writing on a pipe
+		return;
 	}
 }
+
+if (isMain(process.argv[1], import.meta.url)) await main();
