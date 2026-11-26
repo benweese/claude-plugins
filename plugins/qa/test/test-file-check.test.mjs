@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { check, hookEnabled, findPlaywrightRoot, TEST_FILE } from "../scripts/test-file-check.mjs";
+import { check, hardExpectsWithoutPrecondition, hookEnabled, findPlaywrightRoot, TEST_FILE } from "../scripts/test-file-check.mjs";
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "test-file-check.mjs");
 const unix = process.platform !== "win32";
@@ -116,4 +116,53 @@ test("as a real hook: stdin JSON in, systemMessage JSON out", { skip: !unix }, (
 	const res2 = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(input(bad.dir, path.join(bad.pwRoot, "tests", "cart.spec.ts"))), env: { ...process.env, CLAUDE_PROJECT_DIR: bad.dir }, encoding: "utf8" });
 	assert.equal(res2.status, 2);
 	assert.match(res2.stderr, /✗ eslint/);
+});
+
+test("hard expects: a bare expect( without // precondition on the same line is flagged; soft, poll, helpers and the stop line aren't", () => {
+	const text = [
+		'await expect(page).toHaveURL(/cart/); // precondition', // 1 ok
+		"await expect(page.locator(total)).toHaveText(\"$20\");", // 2 flagged
+		"await expect.soft(page.locator(items)).toHaveCount(2);", // 3 ok
+		"expect(test.info().errors).toHaveLength(0);", // 4 ok: Playwright's stop-after-soft-checks line
+		"await expect.poll(() => count()).toBe(3);", // 5 ok: not a bare expect(
+		"await cartPage.expectText(total, \"$20\");", // 6 ok: a helper
+		"expect (value).toBe(1); //precondition", // 7 ok
+		"  expect(a).toBe(b) // a comment, not the marker", // 8 flagged
+		"const myexpect = 1; myexpect(2);" // 9 ok
+	].join("\n");
+	assert.deepEqual(hardExpectsWithoutPrecondition(text), [2, 8]);
+});
+
+test("hard expects: the hook warns Claude (additionalContext) on any exit, and adds a count to the note", { skip: !unix }, () => {
+	const p = project();
+	const file = path.join(p.pwRoot, "tests", "cart.spec.ts");
+	writeFileSync(file, 'await expect(page).toHaveURL(/cart/); // precondition\nawait expect(total).toHaveText("$20");\n');
+	const r = check(input(p.dir, file), env(p.dir));
+	assert.equal(r.exit, 0);
+	assert.match(r.context, /^qa hook: hard expect without a \/\/ precondition comment at tests\/cart\.spec\.ts:2\. Assertions are soft by default/);
+	assert.match(r.note, / · 1 hard expect\(s\) without \/\/ precondition$/);
+	const failing = project({ bins: { eslint: 1, playwright: 0 } });
+	const f2 = path.join(failing.pwRoot, "tests", "cart.spec.ts");
+	writeFileSync(f2, "expect(a).toBe(1);\n");
+	const r2 = check(input(failing.dir, f2), env(failing.dir));
+	assert.equal(r2.exit, 2);
+	assert.match(r2.context, /cart\.spec\.ts:1/);
+	writeFileSync(file, "await expect.soft(total).toHaveText(\"$20\");\n");
+	assert.equal(check(input(p.dir, file), env(p.dir)).context, undefined, "all soft: no warning");
+	const off = project({ config: null });
+	const f3 = path.join(off.pwRoot, "tests", "cart.spec.ts");
+	writeFileSync(f3, "expect(a).toBe(1);\n");
+	assert.deepEqual(check(input(off.dir, f3), env(off.dir)), { exit: 0 }, "off: no warning either");
+});
+
+test("hard expects (real hook): the warning reaches Claude as PostToolUse additionalContext", { skip: !unix }, () => {
+	const p = project();
+	const file = path.join(p.pwRoot, "tests", "cart.spec.ts");
+	writeFileSync(file, "expect(a).toBe(1);\n");
+	const res = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(input(p.dir, file)), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: p.dir } });
+	assert.equal(res.status, 0);
+	const out = JSON.parse(res.stdout.trim());
+	assert.equal(out.hookSpecificOutput.hookEventName, "PostToolUse");
+	assert.match(out.hookSpecificOutput.additionalContext, /cart\.spec\.ts:1/);
+	assert.match(out.systemMessage, /lint \+ --list OK/);
 });

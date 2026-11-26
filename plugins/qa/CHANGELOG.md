@@ -2,6 +2,23 @@
 
 All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
 
+## [1.6.0] - 2026-11-26
+
+### Added
+
+- **Healer guard (opt-in).** A `PreToolUse` hook on `Edit` / `Write` / `MultiEdit`, on with `.claude/qa.json` `"hooks": { "healerGuard": true }` (a missing or invalid config means off). While the `ui-test-healer` is editing (hook input `agent_type` is `ui-test-healer` or `<plugin>:ui-test-healer`, in a subagent or a `claude --agent` session), it blocks with exit 2:
+  - an edit to a `*.spec.*` / `*.test.*` file that adds, removes or changes a line containing `expect(` / `expect.soft(` / `expect.poll(` / `expect.configure(` or a snapshot matcher (its snapshot name). The edit is applied to the file first, so changing only `"$20"` inside an expect line counts.
+  - any edit to a file matching the new `"expectedData"` globs.
+  - The block tells the healer to ask the user or mark `test.fixme("<question>")`. Locator, wait, navigation and setup edits, and adding `test.fixme`, pass, and so does every other agent. The README lists what it doesn't catch.
+- **The test-file hook (opt-in `lintAfterEdit`) warns about a hard `expect(…)` without a `// precondition` comment** on the same line. The warning goes to Claude as `additionalContext`, with a count in the note. Playwright's `expect(test.info().errors).toHaveLength(0)` stop line is exempt.
+- **test-reviewer** has a new "Assertions" check: hard expects without `// precondition`, and any expect line or snapshot name changed by a heal.
+
+### Changed
+
+- **Soft assertions by default.** `ui-test-generator`, `api-test-generator` and `author-tests` write `expect.soft(…)`. A hard `expect(…)` (or `BasePage`'s `{ soft: false }`) is only for a precondition the rest of the test can't run without, marked `// precondition`. To stop after soft checks, they use `expect(test.info().errors).toHaveLength(0)`.
+- **The healer never heals an expect.** `ui-test-healer` fixes locators, waits, navigation, setup and test-data plumbing only. When a failure is in an expect, it stops: it asks the user with expected vs actual and the requirement, or, with no one to ask, marks the test `test.fixme("<question>")` and reports the question. It never deletes, weakens or converts an expect or changes expected data, and it doesn't retry a blocked change another way. Timing fixes use locator waits (`locator.waitFor()`) instead of adding an expect.
+- Rules inspired by [ChrisTitusTech/titstack](https://github.com/ChrisTitusTech/titstack) (patterns only); written as this plugin's own rules.
+
 ## [1.5.2] - 2026-11-25
 
 ### Fixed
