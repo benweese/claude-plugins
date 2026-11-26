@@ -11,6 +11,13 @@ Changes to the **`benweese` marketplace** itself: plugins added or removed, CI a
 | privacy | [plugins/privacy/CHANGELOG.md](plugins/privacy/CHANGELOG.md) |
 | accessibility | [plugins/accessibility/CHANGELOG.md](plugins/accessibility/CHANGELOG.md) |
 
+## 2026-11-26
+
+### Added
+
+- **Shared review rules.** [`docs/review-rules.md`](docs/review-rules.md) is the single source of the rules every Claude PR review follows, in this repo and in the maintainer's other repos that run one. `claude-review.yml` carries a word-for-word copy, and a test checks it; the other repos get the same block later, one PR each. Two of the rules (document false positives instead of changing correct code; never start a nested review) are patterns from [ChrisTitusTech/titstack](https://github.com/ChrisTitusTech/titstack) (no text copied).
+- **mattpocock-skills** ([github.com/mattpocock/skills](https://github.com/mattpocock/skills), MIT) is enabled at project scope in `.claude/settings.json`, installed unmodified from `claude-plugins-official` for local review, unit tests, PR bodies and handoffs. Nothing from it is copied into this marketplace.
+
 ## 2026-11-25
 
 ### Changed

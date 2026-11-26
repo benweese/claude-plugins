@@ -56,6 +56,7 @@ Claude Code runs a plugin's hooks in every project where the plugin is enabled. 
 plugins/<name>/                   one plugin each: .claude-plugin/plugin.json, README, CHANGELOG, agents/ skills/ hooks/
 examples/sample-app/              a tiny app the plugins test themselves against (no dependencies)
 docs/marketplace-plan.md          what's planned, the config files and the hook rules
+docs/review-rules.md              the rules every Claude PR review follows (copied into claude-review.yml)
 shared/                           code more than one plugin needs, copied into each by scripts/sync-shared.mjs
 scripts/                          docs site build, sync-shared.mjs
 .github/workflows/                CI (below) and the docs site
@@ -72,7 +73,7 @@ CHANGELOG.md                      marketplace-level changes (each plugin has its
 | `codeql.yml` | PRs, pushes to `main`, weekly | code scanning: JavaScript/TypeScript and the workflows |
 | `pages.yml` | pushes to `main` that change docs | publishes the [docs site](https://code.benweese.com/claude-plugins/) |
 | `release.yml` | a pushed `<plugin>--v<version>` tag; or by hand (one tag, or every `--v` tag without a release) | publishes a GitHub release for a signed tag that passes the checks below, with that version's CHANGELOG section as the notes; never creates a tag |
-| `claude-review.yml` | the owner's ready (non-draft) PRs | Claude reviews the PR (comments only; never pushes). Not on fork PRs |
+| `claude-review.yml` | the owner's ready (non-draft) PRs | Claude reviews the PR by [docs/review-rules.md](docs/review-rules.md) (comments only; never pushes). Not on fork PRs |
 | `claude.yml` | `@claude` in the owner's comments | Claude answers or reviews (can't push) |
 | `skill-eval.yml` | **only** the `eval` label on a PR, or started by hand | grades the changed skills (or one named skill) against their `evals/` cases, one skill per job, pass mark 80% |
 
