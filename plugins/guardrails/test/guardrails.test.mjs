@@ -8,7 +8,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadConfig, splitCommands } from "../scripts/lib.mjs";
-import { commitPlan, dangerReasons, preBash, secretCheck } from "../scripts/pre-bash.mjs";
+import { ASK_SPLIT, ASK_UNRESOLVED, capFragment, commitPlans, dangerReasons, preBash, secretCheck } from "../scripts/pre-bash.mjs";
 import { protectedFiles } from "../scripts/protected-files.mjs";
 import { lintAfterEdit } from "../scripts/lint-after-edit.mjs";
 
@@ -36,6 +36,12 @@ function repo({ config, defaultBranch = "trunk" } = {}) {
 const bash = (dir, command) => ({ cwd: dir, tool_name: "Bash", tool_input: { command } });
 const env = (dir, extra = {}) => ({ CLAUDE_PROJECT_DIR: dir, ...extra });
 const builtIn = { gitleaks: false };
+/** secretCheck's deny reason, or null (an "ask" fails the test that expects a deny). */
+const denied = (...a) => {
+	const r = secretCheck(...a);
+	if (r && r.decision !== "deny") throw new Error(`expected deny or null, got ${r.decision}: ${r.reason}`);
+	return r ? r.reason : null;
+};
 
 test("config: missing → secrets on, the rest off; invalid → secrets on + warning; env switch wins", () => {
 	const none = repo();
@@ -54,41 +60,42 @@ test("config: missing → secrets on, the rest off; invalid → secrets on + war
 
 test("splitting command lines and reading commit plans", () => {
 	assert.deepEqual(splitCommands('git add . && git commit -m "a && b" ; echo hi | cat'), ["git add .", 'git commit -m "a && b"', "echo hi", "cat"]);
-	assert.deepEqual(commitPlan("git add . && git commit -m x"), { commit: true, all: false, addAll: true, addTracked: false, addPaths: [] });
-	assert.equal(commitPlan("git commit -am x").all, true);
-	assert.equal(commitPlan("git commit --all -m x").all, true);
-	assert.equal(commitPlan("git commit -m 'add all'").all, false);
-	assert.deepEqual(commitPlan("git add src/a.js b.txt && git commit -m x").addPaths, ["src/a.js", "b.txt"]);
-	assert.equal(commitPlan("git status").commit, false);
+	const plan = (line) => commitPlans(line, { cwd: tmpdir() });
+	assert.deepEqual(plan("git add . && git commit -m x"), [{ dir: tmpdir(), unresolved: null, all: false, addAll: true, addTracked: false, addPaths: [] }]);
+	assert.equal(plan("git commit -am x")[0].all, true);
+	assert.equal(plan("git commit --all -m x")[0].all, true);
+	assert.equal(plan("git commit -m 'add all'")[0].all, false);
+	assert.deepEqual(plan("git add src/a.js b.txt && git commit -m x")[0].addPaths, ["src/a.js", "b.txt"]);
+	assert.deepEqual(plan("git status"), []);
 });
 
 test("secrets: a staged secret blocks the commit; a clean commit passes", () => {
 	const r = repo();
 	r.write("config.js", `const token = "${FAKE_GH}";\n`);
 	r.g("add", "config.js");
-	const reason = secretCheck("git commit -m x", r.dir, builtIn);
+	const reason = denied("git commit -m x", r.dir, builtIn);
 	assert.match(reason, /config\.js:1\s+GitHub token\s+ghp_…\(40 chars\)/);
 	assert.doesNotMatch(reason, new RegExp(FAKE_GH)); // masked
 	const c = repo();
 	c.write("ok.js", "export const y = 2;\n");
 	c.g("add", "ok.js");
-	assert.equal(secretCheck("git commit -m x", c.dir, builtIn), null);
+	assert.equal(denied("git commit -m x", c.dir, builtIn), null);
 });
 
 test('secrets: "git add . && git commit -m x" scans untracked files about to be added', () => {
 	const r = repo();
 	r.write("new/keys.txt", `aws = ${FAKE_AWS}\n`);
-	assert.match(secretCheck("git add . && git commit -m x", r.dir, builtIn), /new\/keys\.txt:1\s+AWS access key/);
-	assert.equal(secretCheck("git commit -m x", r.dir, builtIn), null, "not staged and not added → not committed");
-	assert.equal(secretCheck("git add app.js && git commit -m x", r.dir, builtIn), null, "a different path is added");
-	assert.match(secretCheck("git add new/keys.txt && git commit -m x", r.dir, builtIn), /AWS access key/);
+	assert.match(denied("git add . && git commit -m x", r.dir, builtIn), /new\/keys\.txt:1\s+AWS access key/);
+	assert.equal(denied("git commit -m x", r.dir, builtIn), null, "not staged and not added → not committed");
+	assert.equal(denied("git add app.js && git commit -m x", r.dir, builtIn), null, "a different path is added");
+	assert.match(denied("git add new/keys.txt && git commit -m x", r.dir, builtIn), /AWS access key/);
 });
 
 test('secrets: "git commit -am x" scans tracked changes that aren\'t staged yet', () => {
 	const r = repo();
 	r.write("app.js", `export const x = 1;\nconst key = "${FAKE_GH}";\n`);
-	assert.match(secretCheck("git commit -am x", r.dir, builtIn), /app\.js:2\s+GitHub token/);
-	assert.equal(secretCheck("git commit -m x", r.dir, builtIn), null);
+	assert.match(denied("git commit -am x", r.dir, builtIn), /app\.js:2\s+GitHub token/);
+	assert.equal(denied("git commit -m x", r.dir, builtIn), null);
 });
 
 test("secrets: gitleaks is used when installed; if it fails, the built-in patterns take over", { skip: !unix }, () => {
@@ -102,9 +109,9 @@ test("secrets: gitleaks is used when installed; if it fails, the built-in patter
 	const old = process.env.PATH;
 	process.env.PATH = `${bin}${path.delimiter}${old}`;
 	try {
-		assert.match(secretCheck("git commit -m x", r.dir), /checked with gitleaks\)[\s\S]*config\.js:1\s+gitleaks github-pat/);
+		assert.match(denied("git commit -m x", r.dir), /checked with gitleaks\)[\s\S]*config\.js:1\s+gitleaks github-pat/);
 		writeFileSync(stub, `#!/bin/sh\n[ "$1" = version ] && exit 0\nexit 9\n`);
-		assert.match(secretCheck("git commit -m x", r.dir), /built-in patterns \(gitleaks failed to run\)[\s\S]*GitHub token/);
+		assert.match(denied("git commit -m x", r.dir), /built-in patterns \(gitleaks failed to run\)[\s\S]*GitHub token/);
 	} finally {
 		process.env.PATH = old;
 	}
@@ -137,6 +144,7 @@ test("dangerous commands → ask (opt-in); the default branch comes from git", (
 	assert.equal(ask("git checkout -- .").length, 1);
 	assert.equal(ask("git restore .").length, 1);
 	assert.deepEqual(ask("git restore --staged ."), [], "only unstages");
+	r.write("src/x.js", "\n"); // `cd src` has to resolve for its relative target to be judged
 	for (const c of ["rm -rf /", "rm -rf ~", "rm -rf $HOME", "rm -fr .", `rm -rf ${r.dir}`, "rm -Rf ./", "sudo rm -rf /*", "cd src && rm -rf .."]) assert.equal(ask(c).length, 1, c);
 	for (const c of ["rm -rf node_modules", "rm -r .", "rm -f .env.bak", `rm -rf ${path.join(homedir(), "tmp-x")}`]) assert.deepEqual(ask(c), [], c);
 	const out = preBash(bash(r.dir, "git reset --hard"), env(r.dir), builtIn).json.hookSpecificOutput;
@@ -271,4 +279,176 @@ test("entry points: symlink-safe isMain(), no process.exit(), and finish() is al
 		}
 	}
 	assert.ok(files.includes("is-main.mjs"), "the synced is-main.mjs copy is present");
+});
+
+// ---- #28: the repo each commit runs in, wrappers, "ask" when the repo can't be determined ----
+
+/** A repo whose tracked app.js has an unstaged secret on line 2 (`git commit -am` picks it up). */
+function secretRepo() {
+	const r = repo();
+	r.write("app.js", `export const x = 1;\nconst key = "${FAKE_GH}";\n`);
+	return r;
+}
+const check = (line, cwd, extra = {}) => secretCheck(line, cwd, { ...builtIn, ...extra });
+
+test("secrets: a commit in another repo is scanned there (cd, pushd, env -C, git -C, sudo -D)", () => {
+	const here = repo();
+	const other = secretRepo();
+	for (const form of ["cd {d} && git commit -am x", "cd {d}; git commit -am x", "pushd {d} && git commit -am x", "env -C {d} git commit -am x", "env --chdir={d} git commit -am x", "env -iC {d} git commit -am x", "git -C {d} commit -am x", "sudo -D {d} git commit -am x", "sudo -nD {d} git commit -am x"]) {
+		const r = check(form.replaceAll("{d}", other.dir), here.dir);
+		assert.equal(r?.decision, "deny", form);
+		assert.match(r.reason, /: app\.js:2\s+GitHub token/, `${form}: names the other repo's file`);
+	}
+	assert.equal(check(`cd ${here.dir} && git commit -am x`, other.dir), null, "cd into a clean repo → nothing to block");
+});
+
+test("secrets: indirect git invocations are scanned (env, command, \\git, /usr/bin/git, sudo, sudo -u, nested)", () => {
+	const r = repo();
+	r.write("config.js", `const token = "${FAKE_GH}";\n`);
+	r.g("add", "config.js");
+	for (const cmd of ["FOO=1 git commit -m x", "env git commit -m x", "env FOO=1 git commit -m x", "command git commit -m x", "\\git commit -m x", "/usr/bin/git commit -m x", "sudo git commit -m x", "sudo -u someone git commit -m x", "sudo -nu root git commit -m x", "sudo env git commit -m x"]) {
+		assert.equal(check(cmd, r.dir)?.decision, "deny", cmd);
+	}
+	assert.equal(check("command -v git", r.dir), null);
+});
+
+test("secrets: a commit whose repo can't be determined → ask with the reason; the starting repo is never scanned instead", () => {
+	const here = secretRepo(); // if the hook fell back to scanning here, these would be denies
+	const forms = ['cd "$X" && git commit -am x', "cd $(git rev-parse --show-toplevel) && git commit -am x", 'cd "$(git rev-parse --show-toplevel)" && git commit -am x', "cd `pwd` && git commit -am x", "cd - && git commit -am x", "pushd +1 && git commit -am x", "pushd && git commit -am x", "popd && git commit -am x", "cd missing && git commit -am x", "pushd missing && git commit -am x", "env -C $X git commit -am x", "env -C missing git commit -am x", "git -C $X commit -am x", "git -C missing commit -am x", "sudo -D $X git commit -am x", "GIT_DIR=/x git commit -am x", "git --git-dir=/x commit -am x", "( cd src && git commit -am x )"];
+	for (const form of forms) {
+		const r = check(form, here.dir);
+		assert.equal(r?.decision, "ask", form);
+		assert.ok(r.reason.startsWith(`guardrails: ${ASK_UNRESOLVED} (`), `${form}: ${r.reason}`);
+	}
+});
+
+test("secrets: env -S mentioning git → ask; without git → nothing", () => {
+	const here = secretRepo();
+	for (const form of ['env -S "git commit -am x"', 'env --split-string="git commit -am x"', 'env -iS "git commit -am x"']) {
+		assert.deepEqual(check(form, here.dir), { decision: "ask", reason: `guardrails: ${ASK_SPLIT}.` }, form);
+	}
+	assert.equal(check('env -S "echo hi"', here.dir), null);
+});
+
+test("secrets: what can be resolved is — bare cd, ~, ~/x, relative after a cd, quoted paths with spaces", () => {
+	const home = mkdtempSync(path.join(tmpdir(), "guardrails-home-"));
+	const homeRepo = secretRepo();
+	const spaced = path.join(home, "my repo");
+	spawnSync("git", ["clone", "-q", homeRepo.dir, spaced]);
+	writeFileSync(path.join(spaced, "app.js"), `export const x = 1;\nconst key = "${FAKE_GH}";\n`);
+	const here = repo();
+	const deny = (line, h = home) => check(line, here.dir, { home: h })?.decision;
+	assert.equal(deny("cd && git commit -am x", homeRepo.dir), "deny", "bare cd → home");
+	assert.equal(deny("cd ~ && git commit -am x", homeRepo.dir), "deny");
+	assert.equal(deny('cd ~/"my repo" && git commit -am x'), "deny");
+	assert.equal(deny(`cd "${spaced}" && git commit -am x`), "deny");
+	assert.equal(deny(`cd ${home} && cd "my repo" && git commit -am x`), "deny", "relative to the tracked directory");
+	assert.equal(deny(`cd '${home}' && git -C 'my repo' commit -am x`), "deny");
+});
+
+test("secrets: every commit in the line is checked; a deny wins over an ask; subshells restore the directory", () => {
+	const here = repo();
+	const other = secretRepo();
+	assert.equal(check(`git commit -m a && cd ${other.dir} && git commit -am b`, here.dir)?.decision, "deny", "the second commit");
+	assert.equal(check(`cd "$X" && git commit -m a; cd ${other.dir} && git commit -am b`, here.dir)?.decision, "deny");
+	assert.equal(check(`( cd ${other.dir} && make ) && git commit -am x`, here.dir), null, "after ), back in the clean repo");
+	assert.equal(check(`{ cd ${other.dir}; } && git commit -am x`, here.dir)?.decision, "deny", "{ … } keeps the cd");
+	assert.equal(check("git -C . status && FOO=1 git status", here.dir), null);
+});
+
+test("dangerous: wrappers around rm are normalised; an unknown directory doesn't guess at relative targets", () => {
+	const r = repo({ config: { version: 1, dangerousCommands: true } });
+	const ask = (cmd) => dangerReasons(cmd, r.dir, r.dir);
+	for (const c of ["sudo -u someone rm -rf /", "sudo -nu root rm -rf ~", "sudo -- rm -rf /", "/bin/rm -rf /", "\\rm -rf /", "env rm -rf /", "command rm -rf /", 'cd "$X" && rm -rf /', `cd "$X" && rm -rf ${r.dir}`]) assert.equal(ask(c).length, 1, c);
+	assert.deepEqual(ask('cd "$X" && rm -rf ..'), [], "relative to a directory that can't be determined: not judged");
+	assert.deepEqual(ask("sudo -u someone rm -rf node_modules"), []);
+});
+
+test("secrets: gitleaks findings point at the real file line, also across staged and unstaged changes", { skip: !unix }, () => {
+	const r = repo();
+	r.write("config.js", "// one\n// two\nconst a = null;\nconst b = null;\n");
+	r.g("add", "config.js");
+	r.g("commit", "-qm", "config");
+	r.write("config.js", `// one\n// two\nconst a = "${FAKE_GH}";\nconst b = null;\n`);
+	r.g("add", "config.js"); // staged: line 3
+	r.write("config.js", `// one\n// two\nconst a = "${FAKE_GH}";\nconst b = "${FAKE_GH}";\n`); // unstaged: line 4
+	const bin = mkdtempSync(path.join(tmpdir(), "fake-gitleaks-"));
+	// Like real gitleaks: StartLine is the line in the file it was given.
+	writeFileSync(path.join(bin, "gitleaks"), `#!/usr/bin/env node
+const fs = require("node:fs"), path = require("node:path");
+const a = process.argv.slice(2);
+if (a[0] === "version") process.exit(0);
+const out = [];
+(function walk(d) { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else fs.readFileSync(p, "utf8").split("\\n").forEach((l, i) => { if (/gh[p]_[A-Za-z0-9]{36}/.test(l)) out.push({ File: p, StartLine: i + 1, RuleID: "github-pat" }); }); } })(a[1]);
+fs.writeFileSync(a[a.indexOf("--report-path") + 1], JSON.stringify(out));
+process.exit(out.length ? 3 : 0);
+`);
+	chmodSync(path.join(bin, "gitleaks"), 0o755);
+	const old = process.env.PATH;
+	process.env.PATH = `${bin}${path.delimiter}${old}`;
+	try {
+		const reason = denied("git commit -am x", r.dir, { gitleaks: true });
+		assert.match(reason, /checked with gitleaks\)/);
+		assert.match(reason, /config\.js:3\s+gitleaks github-pat/);
+		assert.match(reason, /config\.js:4\s+gitleaks github-pat/);
+		assert.doesNotMatch(reason, /config\.js:[12]\s/, "no temp-file line numbers");
+	} finally {
+		process.env.PATH = old;
+	}
+});
+
+test("as a real hook: an unresolvable repo → exit 0 + one ask JSON line; a deny still denies", { skip: !unix }, () => {
+	const r = secretRepo();
+	const run = (command) => spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, command)), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir, PATH: "/usr/bin:/bin" } });
+	const asked = run('cd "$(git rev-parse --show-toplevel)" && git commit -am x');
+	assert.equal(asked.status, 0);
+	const lines = asked.stdout.split("\n").filter(Boolean);
+	assert.equal(lines.length, 1);
+	const out = JSON.parse(lines[0]).hookSpecificOutput;
+	assert.equal(out.permissionDecision, "ask");
+	assert.match(out.permissionDecisionReason, /^guardrails: can't tell which repo this commits in; secrets not checked \(\$\(git rev-parse --show-toplevel\) \(a variable or command substitution\)\)\. Run it anyway\?$/);
+	assert.equal(JSON.parse(run("git commit -am x").stdout).hookSpecificOutput.permissionDecision, "deny");
+	assert.equal(run("git commit -am x && env -S 'git status'").stdout.includes('"deny"'), true, "deny wins over the env -S ask");
+});
+
+test("preBash: a secret-check ask and dangerous-command reasons share one prompt", () => {
+	const r = repo({ config: { version: 1, dangerousCommands: true } });
+	const out = preBash(bash(r.dir, 'cd "$X" && git commit -am x && git reset --hard'), env(r.dir), builtIn).json.hookSpecificOutput;
+	assert.equal(out.permissionDecision, "ask");
+	assert.match(out.permissionDecisionReason, /^guardrails: can't tell which repo .*\. guardrails: git reset --hard discards uncommitted work\. Run it anyway\?$/);
+});
+
+test("ask reason: a long command fragment is cut to about 60 characters with …, the explanation kept whole", () => {
+	const here = secretRepo();
+	const long = `$(git -C ${"very/long/path/".repeat(8)} rev-parse --show-toplevel)`;
+	const r = check(`cd "${long}" && git commit -am x`, here.dir);
+	assert.equal(r?.decision, "ask");
+	const m = /\(([^]*) \(a variable or command substitution\)\)\.$/.exec(r.reason);
+	assert.ok(m, r.reason);
+	assert.equal(m[1].length, 60);
+	assert.ok(m[1].endsWith("…") && m[1].startsWith("$(git -C very/long/path/"), m[1]);
+	assert.equal(capFragment("short (why)"), "short (why)");
+	assert.equal(capFragment("x".repeat(61)), `${"x".repeat(59)}…`);
+});
+
+test("as a real hook: commits behind runners and keywords are denied; an unparsable commit asks", { skip: !unix }, () => {
+	const r = repo();
+	r.write("config.js", `const token = "${FAKE_GH}";\n`); // built at run time
+	r.g("add", "config.js");
+	const run = (command) => {
+		const res = spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, command)), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir, PATH: "/usr/bin:/bin" } });
+		assert.equal(res.status, 0, `${command}: ${res.stderr}`);
+		return JSON.parse(res.stdout).hookSpecificOutput;
+	};
+	for (const command of ["if true; then git commit -m x; fi", "! git commit -m x", "nohup git commit -m x", "timeout 5 git commit -m x", "nohup sudo env git commit -m x", "time nice -n 5 git commit -m x"]) {
+		const out = run(command);
+		assert.equal(out.permissionDecision, "deny", command);
+		assert.match(out.permissionDecisionReason, /config\.js:1\s+GitHub token/, command);
+	}
+	for (const command of ["xargs git commit", "bash -c 'git commit -m x'", "eval git commit -m x"]) {
+		const out = run(command);
+		assert.equal(out.permissionDecision, "ask", command);
+		assert.equal(out.permissionDecisionReason, "guardrails: can't parse this commit; secrets not checked. Run it anyway?", command);
+	}
+	assert.equal(spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, 'echo "git commit"')), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir } }).stdout, "", "a quoted mention isn't a commit");
 });

@@ -7,8 +7,9 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { builtInDetectors, loadDenylist, loadPrivacyConfig, luhn, parseDenylist, scanChunks } from "../scripts/detectors.mjs";
-import { privacyPreBash } from "../scripts/pre-bash.mjs";
+import { privacyPreBash, ASK_SPLIT, ASK_UNPARSED, ASK_UNRESOLVED, capFragment } from "../scripts/pre-bash.mjs";
 import { refresh, scan } from "../scripts/scan.mjs";
 import { install } from "../bin/install-privacy-git-hook";
 
@@ -197,4 +198,99 @@ test("git hook installer: installs where git looks, refuses to overwrite, respec
 	// warns when the project hasn't opted in
 	const n = repo();
 	assert.match(install(n.dir).message, /won't block anything until/);
+});
+
+// ---- #28: the repo each commit runs in, wrappers, "ask" when the repo can't be determined ----
+const pdeny = (cwd, command, projectDir = cwd) => privacyPreBash({ cwd, tool_input: { command } }, { CLAUDE_PROJECT_DIR: projectDir }).json?.hookSpecificOutput;
+/** An opted-in repo whose tracked readme.md has an unstaged email on line 2 (`git commit -am` picks it up). */
+function emailRepo() {
+	const r = repo({ version: 1, commitHook: true });
+	r.write("readme.md", `hello\n${EMAIL}\n`);
+	return r;
+}
+
+test("commit hook: a commit in another repo is scanned there (cd, pushd, env -C, git -C, sudo -D), with the session's config", () => {
+	const here = repo({ version: 1, commitHook: true });
+	const other = emailRepo();
+	for (const form of ["cd {d} && git commit -am x", "pushd {d} && git commit -am x", "env -C {d} git commit -am x", "env --chdir={d} git commit -am x", "git -C {d} commit -am x", "sudo -nD {d} git commit -am x"]) {
+		const out = pdeny(here.dir, form.replaceAll("{d}", other.dir));
+		assert.equal(out?.permissionDecision, "deny", form);
+		assert.match(out.permissionDecisionReason, /: readme\.md:2\s+email address/, form);
+		assert.ok(!out.permissionDecisionReason.includes(EMAIL), `${form}: value hidden`);
+	}
+	const off = repo(); // the session project hasn't opted in: other repos' commits aren't checked either
+	assert.equal(pdeny(off.dir, `cd ${other.dir} && git commit -am x`), undefined);
+});
+
+test("commit hook: indirect git invocations are scanned (env, command, \\git, /usr/bin/git, sudo, sudo -u)", () => {
+	const r = repo({ version: 1, commitHook: true });
+	r.write("a.txt", `${EMAIL}\n`);
+	r.g("add", "a.txt");
+	for (const cmd of ["env git commit -m x", "env FOO=1 git commit -m x", "command git commit -m x", "\\git commit -m x", "/usr/bin/git commit -m x", "sudo git commit -m x", "sudo -u someone git commit -m x"]) {
+		assert.equal(pdeny(r.dir, cmd)?.permissionDecision, "deny", cmd);
+	}
+});
+
+test("commit hook: a repo it can't determine → ask with the reason; the starting repo is never scanned instead", () => {
+	const here = emailRepo(); // a fallback scan of this repo would deny
+	for (const form of ['cd "$X" && git commit -am x', 'cd "$(git rev-parse --show-toplevel)" && git commit -am x', "cd - && git commit -am x", "pushd +1 && git commit -am x", "popd && git commit -am x", "cd missing && git commit -am x", "env -C $X git commit -am x", "git -C missing commit -am x", "GIT_DIR=/x git commit -am x", "( cd docs && git commit -am x )"]) {
+		const out = pdeny(here.dir, form);
+		assert.equal(out?.permissionDecision, "ask", form);
+		assert.ok(out.permissionDecisionReason.startsWith(`privacy: ${ASK_UNRESOLVED} (`), `${form}: ${out.permissionDecisionReason}`);
+	}
+	for (const form of ['env -S "git commit -am x"', 'env -iS "git commit -am x"']) {
+		assert.equal(pdeny(here.dir, form)?.permissionDecisionReason, `privacy: ${ASK_SPLIT}.`, form);
+	}
+	assert.equal(pdeny(here.dir, 'env -S "echo hi"'), undefined);
+});
+
+test("commit hook: resolvable forms, every commit, deny over ask, subshells restore the directory", () => {
+	const here = repo({ version: 1, commitHook: true });
+	const other = emailRepo();
+	mkdirSync(path.join(here.dir, "sub dir"));
+	assert.equal(pdeny(here.dir, `cd "${other.dir}" && git commit -am x`)?.permissionDecision, "deny", "quoted path");
+	assert.equal(pdeny(here.dir, `git commit -m a && cd ${other.dir} && git commit -am b`)?.permissionDecision, "deny", "the second commit");
+	assert.equal(pdeny(here.dir, `cd "$X" && git commit -m a; cd ${other.dir} && git commit -am b`)?.permissionDecision, "deny", "deny wins");
+	assert.equal(pdeny(here.dir, `( cd ${other.dir} && make ) && git commit -am x`), undefined, "after ), back in the clean repo");
+	assert.equal(pdeny(here.dir, `cd "sub dir" && git commit -am x`), undefined, "a clean subfolder of the clean repo");
+});
+
+test("commit hook as a real hook: an unresolvable repo → exit 0 + one ask JSON line", { skip: !unix }, () => {
+	const r = emailRepo();
+	const res = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "pre-bash.mjs")], {
+		input: JSON.stringify({ cwd: r.dir, tool_name: "Bash", tool_input: { command: 'cd "$(git rev-parse --show-toplevel)" && git commit -am x' } }),
+		encoding: "utf8",
+		env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir }
+	});
+	assert.equal(res.status, 0, res.stderr);
+	const lines = res.stdout.split("\n").filter(Boolean);
+	assert.equal(lines.length, 1);
+	const out = JSON.parse(lines[0]).hookSpecificOutput;
+	assert.equal(out.permissionDecision, "ask");
+	assert.match(out.permissionDecisionReason, /^privacy: can't tell which repo this commits in; personal data not checked \(\$\(git rev-parse --show-toplevel\) \(a variable or command substitution\)\)\.$/);
+});
+
+test("commit hook ask reason: a long command fragment is cut to about 60 characters with …", () => {
+	const here = emailRepo();
+	const long = `$(git -C ${"very/long/path/".repeat(8)} rev-parse --show-toplevel)`;
+	const out = pdeny(here.dir, `cd "${long}" && git commit -am x`);
+	assert.equal(out?.permissionDecision, "ask");
+	const m = /\(([^]*) \(a variable or command substitution\)\)\.$/.exec(out.permissionDecisionReason);
+	assert.ok(m, out.permissionDecisionReason);
+	assert.equal(m[1].length, 60);
+	assert.ok(m[1].endsWith("…") && m[1].startsWith("$(git -C very/long/path/"), m[1]);
+	assert.equal(capFragment("short (why)"), "short (why)");
+});
+
+test("commit hook as a real hook: nohup git commit is denied; xargs git commit asks", { skip: !unix }, () => {
+	const r = repo({ version: 1, commitHook: true });
+	r.write("a.txt", `${EMAIL}\n`);
+	r.g("add", "a.txt");
+	const run = (command) => JSON.parse(spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify({ cwd: r.dir, tool_name: "Bash", tool_input: { command } }), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir } }).stdout).hookSpecificOutput;
+	const denied = run("nohup git commit -m x");
+	assert.equal(denied.permissionDecision, "deny");
+	assert.match(denied.permissionDecisionReason, /a\.txt:1\s+email address/);
+	const asked = run("xargs git commit");
+	assert.equal(asked.permissionDecision, "ask");
+	assert.equal(asked.permissionDecisionReason, `privacy: ${ASK_UNPARSED}.`);
 });

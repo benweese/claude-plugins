@@ -2,6 +2,14 @@
 
 All notable changes to the `privacy` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.2] - 2026-11-25
+
+### Fixed
+
+- **The commit blocker scanned the wrong repo, or nothing, for many common commit commands.** It now scans each commit in the repo it runs in, following `cd`, `pushd`, `env -C` / `--chdir`, `sudo -D` and `git -C`. It also unwraps `env`, `command`, `sudo` (options and combined flags), `nohup`, `time`, `timeout`, `nice`, `ionice`, `stdbuf`, `chrt`, `taskset`, `setsid`, `exec`, `!` and shell keywords, `\git` and `/usr/bin/git`. Anything else that mentions `git commit` and can't be parsed (`xargs git commit`, `bash -c '… git commit …'`) asks: "can't parse this commit; personal data not checked". `( … )` subshells restore the directory at `)`; `{ … }` groups keep a `cd`. Every commit in a command is checked, and the session project's config and denylist apply to all of them.
+- **When the repo can't be determined, it asks instead of passing.** Examples: `cd "$(…)"`, `cd "$DIR"`, `cd -`, `pushd +N`, `popd`, a missing folder, `GIT_DIR=…`, or a `cd` inside `( … )`. The prompt says "can't tell which repo this commits in; personal data not checked". An `env -S` string that mentions `git` asks with "can't parse env -S; personal data not checked". It never falls back to scanning the starting folder.
+- The shared command parsing (`shared/commit-content.mjs`, synced into `scripts/commit-content.mjs`) replaces `commitPlan()` with the directory-aware `commitPlans()`. It is shared with guardrails 0.1.3.
+
 ## [0.1.1] - 2026-11-25
 
 ### Fixed
