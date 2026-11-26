@@ -3,10 +3,11 @@
 // folders, so "does this directory exist" is real.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { capFragment, commitPlans, gitSub, normalizeCommand, resolveDir, shellWords, splitCommands, splitWithOps, trackCommands, words } from "../shared/commit-content.mjs";
+import { spawnSync } from "node:child_process";
+import { capFragment, commitPlans, gitSub, normalizeCommand, resolveDir, runGitDefault, shellWords, splitCommands, splitWithOps, trackCommands, words } from "../shared/commit-content.mjs";
 
 /** root/{a, b, my dir, a/inner}, a fake home with proj/, and a file (not a directory). */
 function fixture() {
@@ -290,11 +291,30 @@ test("commitPlans: commits behind runners and keywords are planned normally", ()
 	assert.equal(only(commitPlans(`timeout 5 git -C ${f.at("a")} commit -m x`, f.opts)).dir, f.at("a"));
 });
 
-test("commitPlans: an unrecognised command mentioning git … commit, or a shell -c string that does → unparsable", () => {
+test("commitPlans: an unrecognised command mentioning git … commit → unparsable; xargs running a commit → xargs", () => {
 	const f = fixture();
-	for (const line of ["xargs git commit", "xargs -0 git commit -m x", "xargs /usr/bin/git commit -m x", "eval git commit -m x", "parallel git commit ::: a", "bash -c 'git commit -am x'", 'sh -c "cd x && git commit"', "zsh -lc 'git commit -m x'", "dash -ec 'git commit -m x'", "bash -o pipefail -c 'git commit -m x'", "ksh -c 'git -C x commit'"]) {
-		assert.deepEqual(commitPlans(line, f.opts), [{ unparsable: "commit" }], line);
+	for (const line of ["parallel git commit ::: a", "watch git commit -m x"]) assert.deepEqual(commitPlans(line, f.opts), [{ unparsable: "commit" }], line);
+	for (const line of ["xargs git commit", "xargs -0 git commit -m x", "xargs /usr/bin/git commit -m x", "xargs -n 1 -I {} git commit -m {}", "xargs --max-args=1 git commit", "xargs -P4 sudo git commit"]) {
+		assert.deepEqual(commitPlans(line, f.opts), [{ unparsable: "xargs" }], line);
 	}
+	for (const line of ["xargs echo", "xargs git add", "xargs -0 rm -f", "xargs"]) assert.deepEqual(commitPlans(line, f.opts), [], line);
+});
+
+test("commitPlans: bash|sh|zsh|dash|ksh -c and eval strings are parsed as command lines (same directory)", () => {
+	const f = fixture();
+	const cases = [
+		["bash -c 'git commit -am x'", f.root],
+		['sh -c "cd a && git commit"', f.at("a")],
+		["zsh -lc 'git commit -m x'", f.root],
+		["dash -ec 'git commit -m x'", f.root],
+		["bash -o pipefail -c 'git commit -m x'", f.root],
+		["ksh -c 'git -C a commit'", f.at("a")],
+		["eval git commit -m x", f.root],
+		[`cd ${f.at("b")} && bash -c 'git commit -m x'`, f.at("b")]
+	];
+	for (const [line, dir] of cases) assert.equal(only(commitPlans(line, f.opts)).dir, dir, line);
+	assert.match(only(commitPlans('cd "$X" && bash -c "git commit -m x"', f.opts)).unresolved, /variable/, "an unknown directory carries into the string");
+	assert.deepEqual(commitPlans("bash -c 'echo hi'", f.opts), []);
 });
 
 test("commitPlans: quoted strings and other git commands don't trigger the catch-all", () => {
@@ -310,4 +330,195 @@ test("capFragment cuts the command fragment, keeps the explanation", () => {
 	assert.equal(capFragment(`${"x".repeat(80)} (why)`), `${"x".repeat(59)}… (why)`);
 	assert.equal(capFragment("x".repeat(61)), `${"x".repeat(59)}…`);
 	assert.equal(capFragment("cd inside a ( … ) subshell (commands after it there aren't tracked)"), "cd inside a ( … ) subshell (commands after it there aren't tracked)");
+});
+
+// ---- #31: git aliases and quoted eval ----
+
+/** A repo with git aliases in its local config, and an isolated global config (a temp file) for the alias lookups. */
+function aliasFixture({ local = {}, global = {} } = {}) {
+	const f = fixture();
+	spawnSync("git", ["init", "-q"], { cwd: f.root });
+	for (const [k, v] of Object.entries(local)) spawnSync("git", ["config", `alias.${k}`, v], { cwd: f.root });
+	const globalFile = path.join(f.root, ".test-global-gitconfig");
+	writeFileSync(globalFile, Object.keys(global).length ? `[alias]\n${Object.entries(global).map(([k, v]) => `\t${k} = ${v}`).join("\n")}\n` : "");
+	const env = { CLAUDE_PROJECT_DIR: f.at("b"), GIT_CONFIG_GLOBAL: globalFile, GIT_CONFIG_NOSYSTEM: "1" };
+	return { ...f, opts: { ...f.opts, env } };
+}
+
+/** A git runner that records calls and passes them to real git. */
+function countingRunner() {
+	const calls = [];
+	const run = (args, o) => {
+		calls.push(args);
+		return runGitDefault(args, o);
+	};
+	return { run, calls };
+}
+
+test("aliases: git ci (alias.ci=commit) is a commit; -c alias inline; alias args come first; chains", () => {
+	const f = aliasFixture({ local: { ci: "commit", cia: "commit -a", a: "b", b: "commit" } });
+	assert.equal(only(commitPlans("git ci -m x", f.opts)).dir, f.root);
+	assert.equal(only(commitPlans("git ci -m x", f.opts)).all, false);
+	assert.equal(only(commitPlans("git cia -m x", f.opts)).all, true, "the alias's -a counts");
+	assert.equal(only(commitPlans("git a -m x", f.opts)).dir, f.root, "alias → alias → commit");
+	assert.equal(only(commitPlans("git -c alias.x=commit x -m y", f.opts)).dir, f.root, "inline -c alias");
+	assert.equal(only(commitPlans("git -c alias.x='commit -a' x -m y", f.opts)).all, true);
+});
+
+test("aliases: system / global configs count (an alias only in GIT_CONFIG_GLOBAL resolves)", () => {
+	const f = aliasFixture({ global: { gci: "commit" } });
+	assert.equal(only(commitPlans("git gci -m x", f.opts)).dir, f.root);
+});
+
+test("aliases: an alias named like a real command is ignored, as git does (alias.status=commit + git status → no plan)", () => {
+	const f = aliasFixture({ local: { status: "commit", l: "log" } });
+	assert.deepEqual(commitPlans("git status", f.opts), []);
+	assert.deepEqual(commitPlans("git l --oneline", f.opts), [], "an alias to log isn't a commit");
+	assert.deepEqual(commitPlans("git nosuchalias", f.opts), [], "not an alias: git would just fail");
+});
+
+test("aliases: any shell alias that runs git, loops, --config-env → unparsable; a shell alias without git → nothing", () => {
+	const f = aliasFixture({ local: { sc: "!sh -c 'git commit -m x'", fn: '!f() { git commit "$@"; }; f', x: '!f() { git "$@"; }; f', lg: "!git log --oneline | head", hi: "!echo hi", loop1: "loop2", loop2: "loop1" } });
+	for (const line of ["git sc", "git fn -m x", "git x commit -m y", "git lg", "git loop1", "git --config-env=alias.z=SOME_VAR z"]) assert.deepEqual(commitPlans(line, f.opts), [{ unparsable: "commit" }], line);
+	assert.deepEqual(commitPlans("git hi", f.opts), []);
+});
+
+test("aliases: resolved from the repo the command runs in; an alias in an unknown repo → unresolved", () => {
+	const f = aliasFixture();
+	spawnSync("git", ["init", "-q"], { cwd: f.at("b") });
+	spawnSync("git", ["config", "alias.bci", "commit"], { cwd: f.at("b") });
+	assert.deepEqual(commitPlans("git bci -m x", f.opts), [], "not an alias in the starting repo");
+	assert.equal(only(commitPlans(`cd ${f.at("b")} && git bci -m x`, f.opts)).dir, f.at("b"), "the cd target's config");
+	assert.equal(only(commitPlans(`git -C ${f.at("b")} bci -m x`, f.opts)).dir, f.at("b"));
+	const p = only(commitPlans('cd "$X" && git bci -m x', f.opts));
+	assert.equal(p.dir, null);
+	assert.match(p.unresolved, /^git bci \(an alias in a repo that can't be determined\)$/);
+	assert.match(only(commitPlans('cd "$X" && git commit -m x', f.opts)).unresolved, /variable/, "a commit in an unknown repo keeps its own reason");
+	assert.deepEqual(commitPlans('cd "$X" && git status', f.opts), [], "a real command in an unknown repo: nothing");
+});
+
+test("aliases: -C inside an alias moves the repo", () => {
+	const f = aliasFixture({ local: { cib: `-C ${"b"} commit` } });
+	spawnSync("git", ["init", "-q"], { cwd: f.at("b") });
+	assert.equal(only(commitPlans("git cib -m x", f.opts)).dir, f.at("b"));
+});
+
+test("aliases: a plain git commit makes no git calls; list-cmds runs once, only for an unknown subcommand", () => {
+	const f = aliasFixture({ local: { ci: "commit" } });
+	const plain = countingRunner();
+	commitPlans("git add . && git commit -m x && git commit -am y", { ...f.opts, runGit: plain.run });
+	assert.deepEqual(plain.calls, [], "commit and add need no lookups");
+	const mixed = countingRunner();
+	commitPlans("git status && git ci -m x && git log && git ci -m y", { ...f.opts, runGit: mixed.run });
+	assert.equal(mixed.calls.filter((a) => a[0] === "--list-cmds=main,others").length, 1, "listed once per run");
+	assert.equal(mixed.calls.filter((a) => a[0] === "config").length, 2, "one config lookup per alias use");
+});
+
+test("aliases: a timeout or an exhausted budget → unparsable (fake slow git)", () => {
+	const f = aliasFixture({ local: { ci: "commit" } });
+	// a git that times out on config
+	const slowConfig = (args, o) => (args[0] === "config" ? { status: null, stdout: "", timedOut: true } : runGitDefault(args, o));
+	assert.deepEqual(commitPlans("git ci -m x", { ...f.opts, runGit: slowConfig }), [{ unparsable: "commit" }]);
+	// each call takes 2 s of fake time against the 5 s budget: list-cmds (2 s timeout) → config (2 s) → config with
+	// only 1 s left (its timeout is cut to 1 s) → the third lookup has no time left
+	let clock = 0;
+	const timeouts = [];
+	const timed = (args, o) => {
+		timeouts.push(o.timeout);
+		clock += 2000;
+		return runGitDefault(args, o);
+	};
+	const plans = commitPlans("git ci -m a && git ci -m b && git ci -m c", { ...f.opts, runGit: timed, now: () => clock });
+	assert.deepEqual(timeouts, [2000, 2000, 1000], "2 s per call, cut to what's left of the budget");
+	assert.deepEqual(plans.map((p) => p.unparsable ?? p.dir), [f.root, f.root, "commit"], "within budget, then out of time");
+});
+
+test("aliases: a real slow git on PATH hits the 2 s timeout → unparsable", { skip: process.platform === "win32" }, () => {
+	const f = aliasFixture();
+	const bin = mkdtempSync(path.join(tmpdir(), "slow-git-"));
+	writeFileSync(path.join(bin, "git"), '#!/bin/sh\ncase "$1" in --list-cmds=*) echo commit; echo status; exit 0;; esac\nsleep 4\n');
+	chmodSync(path.join(bin, "git"), 0o755);
+	const started = Date.now();
+	const plans = commitPlans("git ci -m x", { ...f.opts, env: { ...f.opts.env, PATH: `${bin}:/usr/bin:/bin` } });
+	const took = Date.now() - started;
+	assert.deepEqual(plans, [{ unparsable: "commit" }]);
+	assert.ok(took >= 1900 && took < 3900, `stopped at the 2 s timeout (took ${took} ms)`);
+});
+
+test("eval: a quoted eval string is parsed like a command line; other eval strings → nothing", () => {
+	const f = fixture();
+	assert.equal(only(commitPlans('eval "git commit -m x"', f.opts)).dir, f.root);
+	assert.equal(only(commitPlans("eval 'git commit -m x'", f.opts)).dir, f.root);
+	assert.equal(only(commitPlans('eval "cd a && git commit"', f.opts)).dir, f.at("a"));
+	assert.deepEqual(commitPlans('eval "echo hi"', f.opts), []);
+	assert.deepEqual(commitPlans('eval "git status"', f.opts), []);
+});
+
+test("aliases inside strings and xargs: bash -c / eval resolve aliases; xargs running an alias commit asks; nesting > 3 asks", () => {
+	const f = aliasFixture({ local: { ci: "commit", l: "log" } });
+	for (const line of ['bash -c "git ci -m x"', 'eval "git ci -m x"', "sh -c 'git commit -m x'", "bash -c \"bash -c 'bash -c \\\"git ci\\\"'\""]) {
+		assert.equal(only(commitPlans(line, f.opts)).dir, f.root, line);
+	}
+	assert.deepEqual(commitPlans("xargs git ci", f.opts), [{ unparsable: "xargs" }]);
+	assert.deepEqual(commitPlans("xargs -0 bash -c 'git ci -m x'", f.opts), [{ unparsable: "xargs" }], "xargs running a shell string with a commit");
+	assert.deepEqual(commitPlans("xargs git l", f.opts), [], "an alias to log isn't a commit");
+	assert.deepEqual(commitPlans(`bash -c "bash -c \\"bash -c 'bash -c git ci'\\""`, f.opts), [{ unparsable: "commit" }], "4 levels deep → ask");
+	assert.deepEqual(commitPlans(`bash -c "bash -c \\"bash -c 'bash -c echo'\\""`, f.opts), [], "too deep, but no git in it");
+	assert.deepEqual(commitPlans('bash -c "echo hi"', f.opts), []);
+});
+
+test("aliases: the command's own GIT_CONFIG_* / HOME prefixes count; a $ in them → unparsable", () => {
+	const f = aliasFixture();
+	const cfg = path.join(f.root, "extra.gitconfig");
+	writeFileSync(cfg, "[alias]\n\tci = commit\n");
+	assert.deepEqual(commitPlans("git ci -m x", f.opts), [], "no alias without the prefix");
+	assert.equal(only(commitPlans(`GIT_CONFIG_GLOBAL=${cfg} git ci -m x`, f.opts)).dir, f.root);
+	assert.equal(only(commitPlans("GIT_CONFIG_GLOBAL=extra.gitconfig git ci -m x", f.opts)).dir, f.root, "a relative path is relative to the command's directory");
+	assert.equal(only(commitPlans(`env GIT_CONFIG_GLOBAL=${cfg} git ci -m x`, f.opts)).dir, f.root);
+	assert.equal(only(commitPlans("GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0=commit git ci -m x", f.opts)).dir, f.root);
+	assert.deepEqual(commitPlans("GIT_CONFIG_GLOBAL=$X git ci", f.opts), [{ unparsable: "commit" }]);
+	assert.deepEqual(commitPlans('GIT_CONFIG_GLOBAL="$(mktemp)" git ci', f.opts), [{ unparsable: "commit" }]);
+	assert.equal(only(commitPlans("GIT_CONFIG_GLOBAL=$X git commit -m x", f.opts)).dir, f.root, "no alias lookup needed for commit itself");
+	assert.deepEqual(commitPlans(`GIT_CONFIG_GLOBAL=${cfg} git status`, f.opts), [], "a real command is never an alias");
+});
+
+test("aliases: outer env prefixes reach bash -c / eval strings; inner prefixes override", () => {
+	const f = aliasFixture();
+	const cfg = path.join(f.root, "extra.gitconfig");
+	writeFileSync(cfg, "[alias]\n\tci = commit\n");
+	const none = path.join(f.root, "none.gitconfig");
+	writeFileSync(none, "");
+	assert.equal(only(commitPlans(`GIT_CONFIG_GLOBAL=${cfg} bash -c 'git ci -m x'`, f.opts)).dir, f.root);
+	assert.equal(only(commitPlans(`GIT_CONFIG_GLOBAL=${cfg} eval "git ci -m x"`, f.opts)).dir, f.root);
+	assert.deepEqual(commitPlans(`GIT_CONFIG_GLOBAL=${cfg} bash -c 'GIT_CONFIG_GLOBAL=${none} git ci -m x'`, f.opts), [], "the inner prefix wins");
+	assert.deepEqual(commitPlans(`GIT_CONFIG_GLOBAL=$X bash -c 'git ci -m x'`, f.opts), [{ unparsable: "commit" }]);
+});
+
+test("aliases: export / unset of git config variables carry across commands, like cd (subshells and pipelines don't)", () => {
+	const f = aliasFixture();
+	const cfg = path.join(f.root, "extra.gitconfig");
+	writeFileSync(cfg, "[alias]\n\tci = commit\n");
+	assert.equal(only(commitPlans(`export GIT_CONFIG_GLOBAL=${cfg}; git ci -m x`, f.opts)).dir, f.root);
+	assert.equal(only(commitPlans(`export GIT_CONFIG_GLOBAL=${cfg} && cd a && git ci -m x`, f.opts)).dir, f.at("a"));
+	assert.equal(only(commitPlans(`GIT_CONFIG_GLOBAL=${cfg}; export GIT_CONFIG_GLOBAL; git ci -m x`, f.opts)).dir, f.root, "export of an earlier assignment");
+	assert.deepEqual(commitPlans("GIT_CONFIG_COUNT=1; GIT_CONFIG_KEY_0=alias.ci; GIT_CONFIG_VALUE_0=commit; git ci -m x", f.opts), [], "assigned but never exported: git doesn't see them");
+	assert.equal(only(commitPlans("GIT_CONFIG_COUNT=1; GIT_CONFIG_KEY_0=alias.ci; GIT_CONFIG_VALUE_0=commit; export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0; git ci -m x", f.opts)).dir, f.root, "then exported");
+	assert.equal(only(commitPlans(`GIT_CONFIG_GLOBAL=${cfg}; git ci -m x`, f.opts)).dir, f.root, "assigning a variable that's already exported (the test env exports GIT_CONFIG_GLOBAL) changes what git sees");
+	assert.deepEqual(commitPlans("export GIT_CONFIG_GLOBAL=$X; git ci", f.opts), [{ unparsable: "commit" }]);
+	assert.deepEqual(commitPlans(`( export GIT_CONFIG_GLOBAL=${cfg} ); git ci -m x`, f.opts), [], "a subshell's export ends at )");
+	assert.deepEqual(commitPlans(`export GIT_CONFIG_GLOBAL=${cfg} | cat; git ci -m x`, f.opts), [], "a pipeline stage's export doesn't carry over");
+	assert.deepEqual(commitPlans(`export GIT_CONFIG_GLOBAL=${cfg}; unset GIT_CONFIG_GLOBAL; git ci -m x`, f.opts), [], "unset removes it");
+	assert.deepEqual(commitPlans(`export GIT_CONFIG_GLOBAL=${cfg}; export -n GIT_CONFIG_GLOBAL; git ci -m x`, f.opts), [], "export -n un-exports it");
+	assert.equal(only(commitPlans("export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0=commit; git ci -m x", f.opts)).dir, f.root);
+	assert.equal(only(commitPlans(`{ export GIT_CONFIG_GLOBAL=${cfg}; }; git ci -m x`, f.opts)).dir, f.root, "a { } group's export carries over");
+});
+
+test("real commands: a fixed list never spawns git; an unknown subcommand does; a failing --list-cmds only matters then", () => {
+	const f = aliasFixture({ local: { ci: "commit" } });
+	const counting = countingRunner();
+	commitPlans("git status && git log && git push && git diff && git stash && git rev-parse HEAD && git cherry-pick x", { ...f.opts, runGit: counting.run });
+	assert.deepEqual(counting.calls, [], "only listed commands: zero spawns");
+	const failing = (args, o) => (args[0] === "--list-cmds=main,others" ? { status: 128, stdout: "", timedOut: false } : runGitDefault(args, o));
+	assert.deepEqual(commitPlans("git status", { ...f.opts, runGit: failing }), [], "no plan, no ask");
+	assert.deepEqual(commitPlans("git ci -m x", { ...f.opts, runGit: failing }), [{ unparsable: "commit" }], "an unknown subcommand needs the list");
 });

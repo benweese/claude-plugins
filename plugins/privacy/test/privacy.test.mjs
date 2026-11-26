@@ -9,7 +9,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { builtInDetectors, loadDenylist, loadPrivacyConfig, luhn, parseDenylist, scanChunks } from "../scripts/detectors.mjs";
-import { privacyPreBash, ASK_SPLIT, ASK_UNPARSED, ASK_UNRESOLVED, capFragment } from "../scripts/pre-bash.mjs";
+import { privacyPreBash, ASK_SPLIT, ASK_UNPARSED, ASK_UNRESOLVED, ASK_XARGS, capFragment } from "../scripts/pre-bash.mjs";
 import { refresh, scan } from "../scripts/scan.mjs";
 import { install } from "../bin/install-privacy-git-hook";
 
@@ -292,5 +292,5 @@ test("commit hook as a real hook: nohup git commit is denied; xargs git commit a
 	assert.match(denied.permissionDecisionReason, /a\.txt:1\s+email address/);
 	const asked = run("xargs git commit");
 	assert.equal(asked.permissionDecision, "ask");
-	assert.equal(asked.permissionDecisionReason, `privacy: ${ASK_UNPARSED}.`);
+	assert.equal(asked.permissionDecisionReason, `privacy: ${ASK_XARGS}.`);
 });

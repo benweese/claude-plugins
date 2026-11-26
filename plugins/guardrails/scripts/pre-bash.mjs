@@ -21,6 +21,7 @@ export { capFragment, commitPlans, addedLines, contentToCommit } from "./commit-
 export const ASK_UNRESOLVED = "can't tell which repo this commits in; secrets not checked";
 export const ASK_SPLIT = "can't parse env -S; secrets not checked";
 export const ASK_UNPARSED = "can't parse this commit; secrets not checked";
+export const ASK_XARGS = "can't see xargs arguments; secrets not checked";
 
 /** Built-in secret patterns (used when gitleaks isn't installed). */
 export const SECRET_PATTERNS = [
@@ -105,7 +106,7 @@ export function secretCheck(line, cwd, opts = {}) {
 	const asks = [];
 	const chunks = [];
 	for (const p of plans) {
-		if (p.unparsable) asks.push(p.unparsable === "env -S" ? ASK_SPLIT : ASK_UNPARSED);
+		if (p.unparsable) asks.push(p.unparsable === "env -S" ? ASK_SPLIT : p.unparsable === "xargs" ? ASK_XARGS : ASK_UNPARSED);
 		else if (p.dir === null) asks.push(`${ASK_UNRESOLVED} (${capFragment(p.unresolved)})`);
 		else for (const c of contentToCommit(p.dir, p)) chunks.push({ ...c, repo: p.dir });
 	}

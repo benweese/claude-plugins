@@ -445,10 +445,11 @@ test("as a real hook: commits behind runners and keywords are denied; an unparsa
 		assert.equal(out.permissionDecision, "deny", command);
 		assert.match(out.permissionDecisionReason, /config\.js:1\s+GitHub token/, command);
 	}
-	for (const command of ["xargs git commit", "bash -c 'git commit -m x'", "eval git commit -m x"]) {
-		const out = run(command);
-		assert.equal(out.permissionDecision, "ask", command);
-		assert.equal(out.permissionDecisionReason, "guardrails: can't parse this commit; secrets not checked. Run it anyway?", command);
+	for (const command of ["bash -c 'git commit -m x'", "eval git commit -m x"]) {
+		assert.equal(run(command).permissionDecision, "deny", `${command}: the string is parsed and scanned`);
 	}
+	const xargs = run("xargs git commit");
+	assert.equal(xargs.permissionDecision, "ask");
+	assert.equal(xargs.permissionDecisionReason, "guardrails: can't see xargs arguments; secrets not checked. Run it anyway?");
 	assert.equal(spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, 'echo "git commit"')), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir } }).stdout, "", "a quoted mention isn't a commit");
 });
