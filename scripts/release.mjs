@@ -29,8 +29,10 @@ export function changelogSection(text, version) {
 	return body || null;
 }
 
-/** <plugin>--v<version> (semver, optional pre-release) → {plugin, version}, or null. */
+/** <plugin>--v<version> (semver, optional pre-release) → {plugin, version}, or null. "--v" must appear exactly once,
+ *  so a name like a--v1.0.0--v2.0.0 (which could be read as plugin "a" or "a--v1.0.0") is rejected. */
 export function parseTag(tag) {
+	if (String(tag).split("--v").length !== 2) return null;
 	const m = /^([a-z0-9][a-z0-9-]*?)--v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(String(tag));
 	return m ? { plugin: m[1], version: m[2] } : null;
 }

@@ -25,7 +25,9 @@ test("changelogSection: the version's body up to the next ## heading; exact vers
 test("parseTag: <plugin>--v<semver>, nothing else", () => {
 	assert.deepEqual(parseTag("qa--v1.5.1"), { plugin: "qa", version: "1.5.1" });
 	assert.deepEqual(parseTag("my-plugin--v0.1.0-beta.2"), { plugin: "my-plugin", version: "0.1.0-beta.2" });
-	for (const t of ["qa-v1.5.1", "qa--v1.5", "qa--1.5.1", "--v1.0.0", "QA--v1.0.0", "qa--v1.0.0/x"]) assert.equal(parseTag(t), null, t);
+	for (const t of ["qa-v1.5.1", "qa--v1.5", "qa--1.5.1", "--v1.0.0", "QA--v1.0.0", "qa--v1.0.0/x", "a--v1.0.0--v2.0.0", "a--vx--v1.0.0"]) assert.equal(parseTag(t), null, t);
+	const f = fixture();
+	assert.deepEqual(checkTag("a--v1.0.0--v2.0.0", ctx(runner(f.dir))), { action: "error", tag: "a--v1.0.0--v2.0.0", reason: "not a <plugin>--v<version> tag" }, "rejected before any git or API call");
 });
 
 /**
