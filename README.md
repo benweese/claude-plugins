@@ -55,6 +55,7 @@ Claude Code runs a plugin's hooks in every project where the plugin is enabled. 
 .claude-plugin/marketplace.json   the "benweese" marketplace: one entry per plugin (source ./plugins/<name>)
 plugins/<name>/                   one plugin each: .claude-plugin/plugin.json, README, CHANGELOG, agents/ skills/ hooks/
 examples/sample-app/              a tiny app the plugins test themselves against (no dependencies)
+CLAUDE.md                         short guide for Claude in this repo: what to read first, the rules that bite
 docs/marketplace-plan.md          what's planned, the config files and the hook rules
 docs/review-rules.md              the rules every Claude PR review follows (copied into claude-review.yml)
 shared/                           code more than one plugin needs, copied into each by scripts/sync-shared.mjs
