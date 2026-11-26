@@ -45,7 +45,7 @@
 			"name": "accessibility",
 			"source": "./plugins/accessibility",
 			"description": "Helps Claude build accessible UI: /a11y (axe scan with plain-English fixes), an a11y-reviewer agent and a contrast calculator.",
-			"version": "0.1.0",
+			"version": "0.1.1",
 			"category": "accessibility"
 		}
 	]
