@@ -50,6 +50,15 @@ function ok(r, what) {
 	return r.stdout;
 }
 
+/** JSON.parse that returns undefined instead of throwing. */
+function parseJson(text) {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+}
+
 /** Tag names that already have a GitHub release. */
 export function publishedTags(runner, repo) {
 	const out = ok(runner.gh(["api", "--paginate", `repos/${repo}/releases`, "--jq", ".[].tag_name"]), "listing releases");
@@ -64,9 +73,11 @@ export function remoteReleaseTags(runner) {
 
 /** What GitHub says about a tag: {kind: "lightweight" | "annotated" | "nested", commit, verified, reason}. */
 function tagFacts(runner, repo, tag) {
-	const ref = JSON.parse(ok(runner.gh(["api", `repos/${repo}/git/ref/tags/${tag}`]), `reading the tag ${tag}`));
+	const ref = parseJson(ok(runner.gh(["api", `repos/${repo}/git/ref/tags/${tag}`]), `reading the tag ${tag}`));
+	if (typeof ref?.object?.type !== "string" || typeof ref.object.sha !== "string") throw new Error(`GitHub's response for the tag ${tag} isn't valid (git/ref/tags)`);
 	if (ref.object.type === "commit") return { kind: "lightweight", commit: ref.object.sha };
-	const obj = JSON.parse(ok(runner.gh(["api", `repos/${repo}/git/tags/${ref.object.sha}`]), `reading the tag object of ${tag}`));
+	const obj = parseJson(ok(runner.gh(["api", `repos/${repo}/git/tags/${ref.object.sha}`]), `reading the tag object of ${tag}`));
+	if (typeof obj?.object?.type !== "string" || typeof obj.object.sha !== "string") throw new Error(`GitHub's response for the tag object of ${tag} isn't valid (git/tags)`);
 	if (obj.object.type !== "commit") return { kind: "nested", commit: null };
 	return { kind: "annotated", commit: obj.object.sha, verified: obj.verification?.verified === true, reason: obj.verification?.reason || "unknown" };
 }
@@ -99,18 +110,20 @@ export function checkTag(tag, { runner, repo, published, mainRef = "origin/main"
 		return { action: "error", tag, reason: facts.reason === "unsigned" ? "annotated but unsigned" : `signature not verified by GitHub (${facts.reason})` };
 	}
 	const show = (p) => runner.git(["show", `${facts.commit}:${p}`]);
-	let market;
-	try {
-		market = JSON.parse(ok(show(".claude-plugin/marketplace.json"), "reading marketplace.json at the tagged commit"));
-	} catch (e) {
-		return { action: "error", tag, reason: e.message };
-	}
-	const entry = (market.plugins || []).find((p) => p.name === plugin);
+	const short = facts.commit.slice(0, 7);
+	const marketFile = show(".claude-plugin/marketplace.json");
+	if (marketFile.status !== 0) return { action: "error", tag, reason: `no .claude-plugin/marketplace.json at ${short}` };
+	const market = parseJson(marketFile.stdout);
+	if (!market || typeof market !== "object") return { action: "error", tag, reason: `marketplace.json at ${short} is not valid JSON` };
+	const entry = (Array.isArray(market.plugins) ? market.plugins : []).find((p) => p?.name === plugin);
 	if (!entry) return { action: "error", tag, reason: `no plugin "${plugin}" in marketplace.json at the tagged commit` };
-	const source = String(entry.source || "").replace(/^\.\//, "");
+	if (typeof entry.source !== "string" || !entry.source.startsWith("./")) return { action: "error", tag, reason: `only local ./ sources are supported (marketplace.json "${plugin}" source at ${short})` };
+	const source = entry.source.replace(/^\.\//, "").replace(/\/+$/, "");
 	const manifest = show(`${source}/.claude-plugin/plugin.json`);
 	if (manifest.status !== 0) return { action: "error", tag, reason: `no ${source}/.claude-plugin/plugin.json at the tagged commit` };
-	const pj = JSON.parse(manifest.stdout).version;
+	const pjson = parseJson(manifest.stdout);
+	if (!pjson || typeof pjson !== "object") return { action: "error", tag, reason: `plugin.json at ${short} is not valid JSON (${source}/.claude-plugin/plugin.json)` };
+	const pj = pjson.version;
 	if (pj !== version) return { action: "error", tag, reason: `plugin.json says ${pj}, the tag says ${version}` };
 	if (entry.version !== undefined && entry.version !== version) return { action: "error", tag, reason: `marketplace.json says ${entry.version}, the tag says ${version}` };
 	const log = show(`${source}/CHANGELOG.md`);
@@ -144,7 +157,7 @@ export function main(argv, env = process.env, runner = realRunner(process.cwd())
 	const i = argv.indexOf("--tag");
 	const one = (i !== -1 ? argv[i + 1] : env.RELEASE_TAG) || "";
 	try {
-		runner.git(["fetch", "--quiet", "origin"]); // best effort: an up-to-date origin/main and tags
+		if (runner.git(["fetch", "--quiet", "origin"]).status !== 0) logError("warning: git fetch failed; origin/main may be stale"); // best effort
 		const repo = env.GITHUB_REPOSITORY || ok(runner.gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]), "finding the repo").trim();
 		const tags = one ? [one] : remoteReleaseTags(runner);
 		const plan = planReleases(tags, { runner, repo, published: publishedTags(runner, repo) });

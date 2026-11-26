@@ -19,8 +19,10 @@ on:
 
 permissions: {}
 
+# One group per ref: runs for different tags don't wait on (or cancel) each other. In a shared group GitHub keeps
+# only the newest pending run and cancels older pending ones, which would drop tags.
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

@@ -237,3 +237,68 @@ test("every plugin in this repo has a CHANGELOG section for its current version"
 		assert.ok(changelogSection(readFileSync(path.join(dir, "CHANGELOG.md"), "utf8"), version), `${p.name} ${version}`);
 	}
 });
+
+test("malformed plugin.json at one tag → an error for that tag; another tag still releases", () => {
+	const f = fixture();
+	const good = f.first;
+	f.write("plugins/qa/.claude-plugin/plugin.json", '{ "name": "qa", "version": '); // broken
+	f.write("plugins/qa/CHANGELOG.md", `## [1.3.0] - 2026-11-25\n\n- x\n\n${LOG}`);
+	f.write(".claude-plugin/marketplace.json", JSON.stringify({ plugins: [{ name: "qa", source: "./plugins/qa", version: "1.3.0" }] }));
+	const bad = f.commit("broken plugin.json");
+	f.moveMain(bad);
+	const tags = { "qa--v1.2.0": signed(good), "qa--v1.3.0": signed(bad) };
+	const p = planReleases(Object.keys(tags), ctx(runner(f.dir, { tags })));
+	assert.deepEqual(p.release.map((r) => r.tag), ["qa--v1.2.0"]);
+	assert.equal(p.errors.length, 1);
+	assert.equal(p.errors[0].reason, `plugin.json at ${bad.slice(0, 7)} is not valid JSON (plugins/qa/.claude-plugin/plugin.json)`);
+});
+
+test("malformed marketplace.json at the tagged commit → error, no throw", () => {
+	const f = fixture();
+	f.write(".claude-plugin/marketplace.json", "{ nope");
+	const bad = f.commit("broken marketplace");
+	f.moveMain(bad);
+	assert.equal(checkTag("qa--v1.2.0", ctx(runner(f.dir, { tags: { "qa--v1.2.0": signed(bad) } }))).reason, `marketplace.json at ${bad.slice(0, 7)} is not valid JSON`);
+});
+
+test("a marketplace source that isn't a local ./ path → only local ./ sources are supported", () => {
+	for (const source of [{ source: "github", repo: "example-owner/qa" }, "plugins/qa", 42]) {
+		const f = fixture();
+		f.write(".claude-plugin/marketplace.json", JSON.stringify({ plugins: [{ name: "qa", source, version: "1.2.0" }] }));
+		const c = f.commit("other source");
+		f.moveMain(c);
+		const r = checkTag("qa--v1.2.0", ctx(runner(f.dir, { tags: { "qa--v1.2.0": signed(c) } })));
+		assert.equal(r.action, "error", JSON.stringify(source));
+		assert.match(r.reason, /^only local \.\/ sources are supported/, JSON.stringify(source));
+	}
+});
+
+test("a malformed GitHub API response for a tag → error for that tag, the run continues", () => {
+	const f = fixture();
+	const r = runner(f.dir, { tags: { "qa--v1.2.0": signed(f.first), "qa--v1.1.0": signed(f.first) } });
+	const gh = r.gh;
+	r.gh = (args) => (String(args[1]).endsWith("/git/ref/tags/qa--v1.1.0") ? { status: 0, stdout: "<html>oops</html>", stderr: "" } : gh(args));
+	const p = planReleases(["qa--v1.1.0", "qa--v1.2.0"], ctx(r));
+	assert.deepEqual(p.release.map((x) => x.tag), ["qa--v1.2.0"]);
+	assert.match(p.errors[0].reason, /GitHub's response for the tag qa--v1\.1\.0 isn't valid/);
+});
+
+test("main: a failed git fetch prints a warning and carries on", () => {
+	const f = fixture();
+	const r = runner(f.dir, { tags: {}, remoteTags: [] });
+	const git = r.git;
+	r.git = (args) => (args[0] === "fetch" ? { status: 128, stdout: "", stderr: "fatal: unable to access" } : git(args));
+	const out = [];
+	const err = [];
+	assert.equal(main([], { GITHUB_REPOSITORY: REPO }, r, (s) => out.push(s), (s) => err.push(s)), 0);
+	assert.deepEqual(err, ["warning: git fetch failed; origin/main may be stale"]);
+	assert.deepEqual(out, ["Nothing to release."]);
+});
+
+test("release.yml: per-ref concurrency group, no cancelling; tag-push and manual triggers only", () => {
+	const yml = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".github", "workflows", "release.yml"), "utf8");
+	assert.match(yml, /^concurrency:\n {2}group: release-\$\{\{ github\.ref \}\}\n {2}cancel-in-progress: false$/m);
+	assert.match(yml, /^ {2}push:\n {4}tags: \["\*--v\*"\]$/m);
+	assert.match(yml, /^ {2}workflow_dispatch:$/m);
+	assert.doesNotMatch(yml, /branches:/, "no longer runs on pushes to main");
+});

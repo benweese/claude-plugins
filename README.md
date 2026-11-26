@@ -99,6 +99,10 @@ node scripts/sync-shared.mjs                     # after editing shared/ (a test
    4. **Versions match?** At the tagged commit, `plugin.json` and the `marketplace.json` entry must both say the tag's version.
    5. **Release notes?** At the tagged commit, the plugin's `CHANGELOG.md` must have a `## [<version>]` section. Its body becomes the release notes. A version with a pre-release part (`1.0.0-beta.1`) is published as a pre-release.
 
+**Push tags one at a time.** `claude plugin tag --push` pushes one tag. GitHub doesn't start tag-push runs when more than 3 tags are pushed at once, and older pending runs in a shared concurrency group get cancelled; the workflow uses one group per tag. If a tag was missed, the empty-tag catch-up below releases it.
+
+**After the first real tag push** on this flow, check that the push-triggered **Release plugins** run released it. If it didn't, start the workflow by hand with that tag.
+
 A failed check means no release for that tag, with the reason in the workflow log. To re-run a tag, or to catch up every `--v` tag without a release, start **Release plugins** by hand. Preview locally with `node scripts/release.mjs --dry-run` (add `--tag <name>--v<version>` for one tag). Old tags and releases are left as they are.
 
 **Skill evals:** each skill has 3–5 cases in `skills/<skill>/evals/*.yaml` ([format](https://github.com/skill-bench/skill-eval-action#eval-case-format)), including one that shouldn't trigger it. They run on the Anthropic API, so they **cost money** (a few cents per case, paid from a dedicated key with a low spend limit): add the `eval` label to a PR to grade the skills it changes, or run **Skill Eval** by hand for one skill (`<plugin>/<skill>`). They never run automatically. Playwright's vendored `qa:playwright-cli` has no evals.
