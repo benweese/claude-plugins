@@ -294,8 +294,8 @@ const RUNNERS = {
 	chrt: { short: "TPD", long: ["--sched-runtime", "--sched-period", "--sched-deadline"], positional: 0, numeric: true },
 	taskset: { short: "", long: [], positional: 1 }
 };
-/** Shells whose `-c '<string>'` runs a command line the hooks don't parse (yet). */
-const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
+/** Shells whose `-c '<string>'` runs a command line of its own (parsed by commitPlans and guardrails' push checks). */
+export const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 
 /** A command word without a leading "\" or a path: "\git" → "git", "/usr/bin/git" → "git". */
 const commandName = (w) => {
@@ -718,7 +718,7 @@ export function mentionsCommit(ws) {
 }
 
 /** The '<string>' of `bash -c '<string>'` (also -lc, -ec …: any short cluster with c), or null. */
-function shellCommandString(ws) {
+export function shellCommandString(ws) {
 	let c = false;
 	for (let i = 1; i < ws.length; i++) {
 		const a = ws[i];
