@@ -9,7 +9,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { builtInDetectors, loadDenylist, loadPrivacyConfig, luhn, parseDenylist, scanChunks } from "../scripts/detectors.mjs";
-import { privacyPreBash, ASK_SPLIT, ASK_UNPARSED, ASK_UNRESOLVED, capFragment } from "../scripts/pre-bash.mjs";
+import { privacyPreBash, ASK_SPLIT, ASK_UNPARSED, ASK_UNRESOLVED, ASK_XARGS, capFragment } from "../scripts/pre-bash.mjs";
 import { refresh, scan } from "../scripts/scan.mjs";
 import { install } from "../bin/install-privacy-git-hook";
 
@@ -292,5 +292,26 @@ test("commit hook as a real hook: nohup git commit is denied; xargs git commit a
 	assert.match(denied.permissionDecisionReason, /a\.txt:1\s+email address/);
 	const asked = run("xargs git commit");
 	assert.equal(asked.permissionDecision, "ask");
-	assert.equal(asked.permissionDecisionReason, `privacy: ${ASK_UNPARSED}.`);
+	assert.equal(asked.permissionDecisionReason, `privacy: ${ASK_XARGS}.`);
+});
+
+test("commit hook as a real hook: a git alias commit is denied; a shell alias running git commit and a quoted eval ask", { skip: !unix }, () => {
+	const r = repo({ version: 1, commitHook: true });
+	r.g("config", "alias.ci", "commit");
+	r.g("config", "alias.sc", "!sh -c 'git commit -m x'");
+	r.write("a.txt", `${EMAIL}\n`);
+	r.g("add", "a.txt");
+	const globalFile = path.join(mkdtempSync(path.join(tmpdir(), "privacy-gitcfg-")), "gitconfig");
+	writeFileSync(globalFile, "");
+	const run = (command) => {
+		const res = spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify({ cwd: r.dir, tool_name: "Bash", tool_input: { command } }), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir, GIT_CONFIG_GLOBAL: globalFile, GIT_CONFIG_NOSYSTEM: "1" } });
+		return res.stdout ? JSON.parse(res.stdout).hookSpecificOutput : undefined;
+	};
+	const denied = run("git ci -m x");
+	assert.equal(denied?.permissionDecision, "deny");
+	assert.match(denied.permissionDecisionReason, /a\.txt:1\s+email address/);
+	assert.equal(run("git sc")?.permissionDecisionReason, `privacy: ${ASK_UNPARSED}.`, "a shell alias running git commit");
+	assert.equal(run('eval "git commit -m x"')?.permissionDecision, "deny", "a quoted eval string is parsed and scanned");
+	assert.equal(run('bash -c "git ci -m x"')?.permissionDecision, "deny", "an alias inside a bash -c string");
+	assert.equal(run("xargs git ci")?.permissionDecisionReason, `privacy: ${ASK_XARGS}.`, "xargs running an alias commit");
 });

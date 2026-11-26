@@ -16,6 +16,7 @@ import { isMain } from "./is-main.mjs";
 export const ASK_UNRESOLVED = "can't tell which repo this commits in; personal data not checked";
 export const ASK_SPLIT = "can't parse env -S; personal data not checked";
 export const ASK_UNPARSED = "can't parse this commit; personal data not checked";
+export const ASK_XARGS = "can't see xargs arguments; personal data not checked";
 
 /** The whole hook, as data: {exit, json?}. The session project's config and denylist apply to every commit. */
 export function privacyPreBash(input, env = process.env) {
@@ -29,7 +30,7 @@ export function privacyPreBash(input, env = process.env) {
 	const asks = [];
 	const chunks = [];
 	for (const p of plans) {
-		if (p.unparsable) asks.push(p.unparsable === "env -S" ? ASK_SPLIT : ASK_UNPARSED);
+		if (p.unparsable) asks.push(p.unparsable === "env -S" ? ASK_SPLIT : p.unparsable === "xargs" ? ASK_XARGS : ASK_UNPARSED);
 		else if (p.dir === null) asks.push(`${ASK_UNRESOLVED} (${capFragment(p.unresolved)})`);
 		else {
 			const where = path.resolve(p.dir) === path.resolve(cwd) ? "" : `${path.relative(cwd, p.dir) || "."}: `;

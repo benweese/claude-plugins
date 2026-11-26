@@ -2,6 +2,13 @@
 
 All notable changes to the `privacy` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.4] - 2026-11-25
+
+### Fixed
+
+- **The commit blocker missed commits made through git aliases.** `git ci -m x` with `alias.ci = commit` (repo, global or system config, or an inline `git -c alias.ci=commit`) is now checked as a commit, with the alias's arguments counted. Aliases are expanded the way git does: an alias named like a real command is ignored, chains are followed, and `-C` inside an alias moves the repo. A shell alias that runs `git … commit`, an alias loop, or a lookup that times out asks: "can't parse this commit; personal data not checked". An alias in a repo that can't be determined asks too. The shared parsing (`shared/commit-content.mjs`) is the same as in guardrails 0.1.5.
+- **Aliases inside strings, and xargs.** `bash -c '…'` and `eval '…'` strings are parsed as command lines of their own, up to 3 levels deep, so aliases and commits inside them are scanned. Deeper nesting with `git` in it asks. `xargs` running a commit asks with "can't see xargs arguments; personal data not checked". The command's own `GIT_CONFIG_*` / `HOME` prefixes, and earlier `export` / `unset` of them, count for alias lookups, and a value from `$…` asks. Any shell alias that runs `git` asks.
+
 ## [0.1.3] - 2026-11-25
 
 ### Fixed

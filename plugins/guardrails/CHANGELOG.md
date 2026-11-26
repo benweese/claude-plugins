@@ -2,6 +2,14 @@
 
 All notable changes to the `guardrails` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.5] - 2026-11-25
+
+### Fixed
+
+- **The secret blocker missed commits made through git aliases.** `git ci -m x` with `alias.ci = commit` (in the repo, global or system config, or an inline `git -c alias.ci=commit`) is now checked as a commit, with the alias's arguments counted (`alias.ci = commit -a` scans unstaged changes). Aliases are expanded the way git does: an alias named like a real command is ignored, chains are followed up to 5 levels, and `-C` inside an alias moves the repo. A shell alias (`!…`) that runs `git … commit`, an alias loop, `--config-env alias.*`, or a lookup that times out (2 s per git call, ~5 s per run) asks: "can't parse this commit; secrets not checked". An alias in a repo that can't be determined asks too. `git --list-cmds` runs only when a subcommand isn't `commit` or `add`, once per run.
+- **Aliases inside strings, and xargs.** `bash -c '…'` (also `sh`, `zsh`, `dash`, `ksh`) and `eval '…'` strings are parsed as command lines of their own, with the same directory and the same alias budget, up to 3 levels deep. So `bash -c "git ci -m x"` and `eval "git ci -m x"` are scanned, and `sh -c 'git commit -m x'` is scanned instead of only asking. Deeper nesting with `git` in it asks. `xargs` (its options included) running a commit, directly or through an alias, asks with "can't see xargs arguments; secrets not checked".
+- **The command's own config prefixes** (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM`, `HOME`, `XDG_CONFIG_HOME`, `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`) are used when looking up an alias. Earlier `export` / `unset` of them in the same line count too (not out of a subshell or pipeline stage), and they reach nested `bash -c` / `eval` strings. A value from `$…` or a substitution asks. Any shell alias (`!…`) that runs `git` asks. Common git commands (`status`, `log`, `push` …) are recognised without spawning `git --list-cmds`.
+
 ## [0.1.4] - 2026-11-25
 
 ### Fixed
