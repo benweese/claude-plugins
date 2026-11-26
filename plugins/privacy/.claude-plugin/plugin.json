@@ -1,6 +1,6 @@
 {
 	"name": "privacy",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Keeps personal data out of commits: /privacy-scan, a privacy-reviewer agent, an opt-in commit blocker and a plain-git hook installer. Emails, Luhn-checked card numbers, SSN-like numbers, US phones, optional dollar amounts, custom patterns and a denylist.",
 	"author": {
 		"name": "Ben Weese",

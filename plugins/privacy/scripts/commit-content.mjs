@@ -69,28 +69,6 @@ export function git(cwd, args) {
 	return r.status === 0 ? r.stdout : "";
 }
 
-/** What a command line will commit: {commit, all, addAll, addPaths, addTracked}. */
-export function commitPlan(line) {
-	const plan = { commit: false, all: false, addAll: false, addTracked: false, addPaths: [] };
-	for (const seg of splitCommands(line)) {
-		const g = gitSub(seg);
-		if (!g) continue;
-		if (g.sub === "add") {
-			for (const a of g.args) {
-				if (a === "-A" || a === "--all" || a === ".") plan.addAll = true;
-				else if (a === "-u" || a === "--update") plan.addTracked = true;
-				else if (!a.startsWith("-")) plan.addPaths.push(a);
-			}
-		}
-		if (g.sub === "commit") {
-			plan.commit = true;
-			for (const a of g.args) if (a === "--all" || /^-[A-Za-z]*a[A-Za-z]*$/.test(a)) plan.all = true;
-			break; // later segments run after the commit
-		}
-	}
-	return plan;
-}
-
 /** Added lines per file from a unified diff (-U0): [{file, lines: [{n, text}]}]. */
 export function addedLines(diff) {
 	const files = [];

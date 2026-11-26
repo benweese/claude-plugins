@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { commitPlan, commitPlans, gitSub, normalizeCommand, resolveDir, shellWords, splitWithOps, trackCommands } from "../shared/commit-content.mjs";
+import { commitPlans, gitSub, normalizeCommand, resolveDir, shellWords, splitCommands, splitWithOps, trackCommands, words } from "../shared/commit-content.mjs";
 
 /** root/{a, b, my dir, a/inner}, a fake home with proj/, and a file (not a directory). */
 function fixture() {
@@ -255,8 +255,10 @@ test("trackCommands reports each command's directory", () => {
 	assert.match(t[3].why, /variable/);
 });
 
-test("the original API is unchanged (the plugins still use it until they switch)", () => {
-	assert.deepEqual(commitPlan("git add . && git commit -m x"), { commit: true, all: false, addAll: true, addTracked: false, addPaths: [] });
+test("the older exports that stay (gitSub, words, splitCommands) are unchanged; commitPlan is gone", async () => {
 	assert.deepEqual(gitSub("git -C x commit -m y"), { sub: "commit", args: ["-m", "y"] });
 	assert.equal(gitSub("env git commit"), null);
+	assert.deepEqual(words(`a "b c" 'd'`), ["a", "b c", "d"]);
+	assert.deepEqual(splitCommands("a && b | c; d"), ["a", "b", "c", "d"]);
+	assert.equal((await import("../shared/commit-content.mjs")).commitPlan, undefined, "replaced by commitPlans");
 });
