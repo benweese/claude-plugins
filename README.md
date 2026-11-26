@@ -14,7 +14,7 @@ A [Claude Code](https://claude.com/claude-code) plugin marketplace named **`benw
 | [docs](plugins/docs/README.md) | 0.2.0 | `/docs sweep` (README, `CLAUDE.md`, JSDoc) and `/docs phase N` (end-of-phase docs update + PR) |
 | [workflow](plugins/workflow/README.md) | 0.3.2 | `/board` for GitHub Projects (configured per repo), a lint check, and opt-in session rules |
 | [guardrails](plugins/guardrails/README.md) | 0.1.6 | Blocks committing secrets (on by default); opt-in protected files, a confirm step for destructive commands, lint after edit |
-| [privacy](plugins/privacy/README.md) | 0.1.4 | `/privacy-scan`, a reviewer agent, an opt-in commit blocker and a plain-git hook for personal data |
+| [privacy](plugins/privacy/README.md) | 0.1.5 | `/privacy-scan`, a reviewer agent, an opt-in commit blocker and a plain-git hook for personal data |
 | [accessibility](plugins/accessibility/README.md) | 0.1.2 | `/a11y` (axe scan with plain-English fixes), an a11y-reviewer agent and a contrast calculator |
 
 What changed: the [marketplace changelog](CHANGELOG.md) and each plugin's own CHANGELOG. Planned: more for `docs` and `workflow`. See [docs/marketplace-plan.md](docs/marketplace-plan.md).
