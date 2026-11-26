@@ -2,6 +2,22 @@
 
 All notable changes to the `guardrails` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.2.0] - 2026-11-26
+
+### Added
+
+- **Dangerous commands (opt-in) now block merges and pushes a person should do.** With `"dangerousCommands": true`, these are denied, with the reason sent to Claude:
+  - merging a PR: `gh pr merge` (any flags, `--auto` too), `gh api` to `repos/<owner>/<repo>/pulls/<n>/merge`, and `gh api graphql` with `mergePullRequest` or `enablePullRequestAutoMerge`
+  - any `git push` to the default branch, forced or not: named (`main`, `+main`, `HEAD:main`, `refs/heads/main`), deleted (`:main`, `--delete`, `-d`), `--all`, `--mirror`, a bare push or `HEAD` while on it, a bare push from a branch whose upstream is it, and `push.default=matching`
+  - plain `--force` / `-f` / `+branch` pushes to any other branch (`--force-with-lease` is allowed there)
+- The push checks resolve `HEAD` / `@` to the current branch, skip the values of push options (`-o` / `--push-option`, `--repo`, `--receive-pack` / `--exec`) so they aren't read as the remote, and follow `bash -c` / `sh -c` strings (3 deep) as well as chains, `cd`, `git -C` / `-c` and wrappers. The default branch comes from `origin/HEAD`, else `init.defaultBranch`; when neither is set, `main` and `master` are both protected. If the folder can't be determined and the branch depends on it, the hook asks.
+- The README says plainly that this is a speed bump: the real wall is a branch ruleset on `main` (require a PR, block force pushes).
+- Rule inspired by [ChrisTitusTech/titstack](https://github.com/ChrisTitusTech/titstack) (pushes and PRs need approval); enforced here with Claude Code PreToolUse hooks.
+
+### Changed
+
+- A force-push to the default branch used to ask; it's now blocked like every other default-branch push. `git reset --hard`, `git clean -fd`, `git checkout -- .`, `git restore .` and `rm -rf` on `/`, `~`, `$HOME` or the repo root still ask.
+
 ## [0.1.6] - 2026-11-25
 
 ### Fixed

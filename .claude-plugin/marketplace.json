@@ -31,7 +31,7 @@
 			"name": "guardrails",
 			"source": "./plugins/guardrails",
 			"description": "Blocks committing secrets (on by default); opt-in protected files, destructive-command confirm, lint after edit.",
-			"version": "0.1.6",
+			"version": "0.2.0",
 			"category": "security"
 		},
 		{
