@@ -99,6 +99,12 @@ node scripts/sync-shared.mjs                     # after editing shared/ (a test
    4. **Versions match?** At the tagged commit, `plugin.json` and the `marketplace.json` entry must both say the tag's version.
    5. **Release notes?** At the tagged commit, the plugin's `CHANGELOG.md` must have a `## [<version>]` section. Its body becomes the release notes. A version with a pre-release part (`1.0.0-beta.1`) is published as a pre-release.
 
+**Trust model.** The workflow checks out `main` and runs **main's** `release.mjs`, which reads the tagged commit with `git show`. That fixes a stale script in an old tag. It doesn't protect against a malicious tag: on a tag push, GitHub reads the *workflow file* from the tagged commit, so whoever can push a `*--v*` tag controls what runs. The real protection is repository rulesets:
+- a **tag ruleset** on `refs/tags/*--v*` that restricts creating, updating and deleting those tags to the repo admin (the maintainer)
+- the **branch ruleset** on `main`: pull requests required, no force pushes, no deletion
+
+The release check accepts any signing key GitHub verifies for the tagger. There's no allowlist of taggers or keys, because with the tag ruleset only the maintainer can create these tags. Rulesets can't tell the maintainer apart from tools running with the maintainer's own credentials, Claude Code included.
+
 **Push tags one at a time.** `claude plugin tag --push` pushes one tag. GitHub doesn't start tag-push runs when more than 3 tags are pushed at once, and older pending runs in a shared concurrency group get cancelled; the workflow uses one group per tag. If a tag was missed, the empty-tag catch-up below releases it.
 
 **After the first real tag push** on this flow, check that the push-triggered **Release plugins** run released it. If it didn't, start the workflow by hand with that tag.

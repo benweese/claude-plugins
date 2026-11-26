@@ -301,6 +301,9 @@ test("release.yml: per-ref concurrency group, no cancelling; tag-push and manual
 	assert.match(yml, /^ {2}push:\n {4}tags: \["\*--v\*"\]$/m);
 	assert.match(yml, /^ {2}workflow_dispatch:$/m);
 	assert.doesNotMatch(yml, /branches:/, "no longer runs on pushes to main");
+	assert.match(yml, /^ {10}ref: main$/m, "checkout runs main's release.mjs");
+	assert.match(yml, /^ {10}fetch-depth: 0\b/m);
+	assert.match(yml, /RELEASE_TAG: \$\{\{ github\.event_name == 'push' && github\.ref_name \|\| inputs\.tag \}\}/, "the tag still comes from the pushed ref");
 });
 
 test("a release created by someone else meanwhile is a skip, not an error (re-check before create, and 'already exists')", () => {
