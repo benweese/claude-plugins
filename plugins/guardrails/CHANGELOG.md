@@ -2,6 +2,15 @@
 
 All notable changes to the `guardrails` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.3] - 2026-11-25
+
+### Fixed
+
+- **The secret blocker scanned the wrong repo, or nothing, for many common commit commands.** It now scans each commit in the repo it runs in, following `cd`, `pushd`, `env -C` / `--chdir`, `sudo -D` and `git -C`. It also sees through `env`, `command`, `sudo` (options and combined flags like `-nu root`, read the way getopt reads them), `\git` and `/usr/bin/git`, nested in any order. `( … )` subshells restore the directory at `)`; `{ … }` groups keep a `cd`. Every commit in a command is checked, not only the first.
+- **When the repo can't be determined, it asks instead of passing.** Examples: `cd "$(…)"`, `cd "$DIR"`, `cd -`, `pushd +N`, `popd`, a missing folder, `GIT_DIR=…`, `git --git-dir`, or a `cd` inside `( … )`. The prompt says "can't tell which repo this commits in; secrets not checked". An `env -S` string that mentions `git` asks with "can't parse env -S; secrets not checked". It never falls back to scanning the starting folder.
+- **Dangerous commands (opt-in):** `sudo -u someone rm -rf /` and other wrapped `rm` commands are caught. When the folder can't be determined, a relative `rm` target isn't guessed at.
+- **gitleaks findings show the real line number.** The temp file holds only the added lines, so its line numbers were wrong before; they're now mapped back. Staged and unstaged changes to the same file are no longer run together in one temp file.
+
 ## [0.1.2] - 2026-11-25
 
 ### Fixed
