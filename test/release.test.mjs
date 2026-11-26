@@ -4,7 +4,7 @@
 // every call, so the tests can prove nothing creates or pushes a tag.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -193,6 +193,12 @@ test("main: catch-up releases what passes, reports errors, exits 1; never create
 	const f = fixture();
 	const tags = { "qa--v1.2.0": signed(f.first), "qa--v1.1.0": { kind: "lightweight", commit: f.first }, "qa--v1.0.0": signed(f.first) };
 	const r = runner(f.dir, { tags, released: ["qa-v1.0.0"] });
+	const gh = r.gh;
+	let notesAtCreate = null;
+	r.gh = (args) => {
+		if (args[0] === "release") notesAtCreate = readFileSync(args[args.indexOf("--notes-file") + 1], "utf8");
+		return gh(args);
+	};
 	const out = [];
 	const err = [];
 	const code = main([], { GITHUB_REPOSITORY: REPO }, r, (s) => out.push(s), (s) => err.push(s));
@@ -202,7 +208,8 @@ test("main: catch-up releases what passes, reports errors, exits 1; never create
 	const creates = r.calls.gh.filter((a) => a[0] === "release");
 	assert.equal(creates.length, 1);
 	assert.deepEqual(creates[0].slice(0, 6), ["release", "create", "qa--v1.2.0", "--verify-tag", "--title", "qa 1.2.0"]);
-	assert.equal(readFileSync(creates[0][creates[0].indexOf("--notes-file") + 1], "utf8"), "### Added\n\n- New thing.\n");
+	assert.equal(notesAtCreate, "### Added\n\n- New thing.\n");
+	assert.equal(existsSync(path.dirname(creates[0][creates[0].indexOf("--notes-file") + 1])), false, "the notes temp folder is removed afterwards");
 	// nothing that writes a tag or a ref
 	for (const a of r.calls.git) assert.ok(["fetch", "ls-remote", "cat-file", "merge-base", "show"].includes(a[0]), `git ${a.join(" ")}`);
 	for (const a of r.calls.gh) {
@@ -367,4 +374,25 @@ test("remoteReleaseTags: only <plugin>--v<version> names, each once (peeled ^{} 
 	].join("\n");
 	const fake = { git: (args) => (args[0] === "ls-remote" ? { status: 0, stdout: lsRemote, stderr: "" } : { status: 1, stdout: "", stderr: "unexpected" }) };
 	assert.deepEqual(remoteReleaseTags(fake), ["qa--v1.5.1", "docs--v0.2.0"]);
+});
+
+test("--tag with no value, or followed by another flag → '--tag needs a value', exit 1, no catch-up", () => {
+	const f = fixture();
+	for (const argv of [["--tag"], ["--tag", "--dry-run"], ["--dry-run", "--tag"], ["--tag", "  "]]) {
+		const r = runner(f.dir, { tags: { "qa--v1.2.0": signed(f.first) } });
+		const out = [];
+		const err = [];
+		assert.equal(main(argv, { GITHUB_REPOSITORY: REPO, RELEASE_TAG: "qa--v1.2.0" }, r, (s) => out.push(s), (s) => err.push(s)), 1, JSON.stringify(argv));
+		assert.deepEqual(err, ["--tag needs a value"], JSON.stringify(argv));
+		assert.deepEqual(out, [], JSON.stringify(argv));
+		assert.equal(r.calls.git.length + r.calls.gh.length, 0, `${JSON.stringify(argv)}: nothing listed, nothing released`);
+	}
+});
+
+test("a marketplace.json entry without a version at the tagged commit → error for that tag", () => {
+	const f = fixture();
+	f.write(".claude-plugin/marketplace.json", JSON.stringify({ plugins: [{ name: "qa", source: "./plugins/qa" }] }));
+	const c = f.commit("no version in the marketplace entry");
+	f.moveMain(c);
+	assert.deepEqual(checkTag("qa--v1.2.0", ctx(runner(f.dir, { tags: { "qa--v1.2.0": signed(c) } }))), { action: "error", tag: "qa--v1.2.0", reason: "marketplace.json entry has no version" });
 });

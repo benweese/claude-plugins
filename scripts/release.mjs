@@ -12,7 +12,7 @@
 //   without a release). RELEASE_TAG in the environment works like --tag. Needs gh with a token that can read the
 //   repo and create releases.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -128,7 +128,8 @@ export function checkTag(tag, { runner, repo, published, mainRef = "origin/main"
 	if (!pjson || typeof pjson !== "object") return { action: "error", tag, reason: `plugin.json at ${short} is not valid JSON (${source}/.claude-plugin/plugin.json)` };
 	const pj = pjson.version;
 	if (pj !== version) return { action: "error", tag, reason: `plugin.json says ${pj}, the tag says ${version}` };
-	if (entry.version !== undefined && entry.version !== version) return { action: "error", tag, reason: `marketplace.json says ${entry.version}, the tag says ${version}` };
+	if (entry.version === undefined) return { action: "error", tag, reason: "marketplace.json entry has no version" };
+	if (entry.version !== version) return { action: "error", tag, reason: `marketplace.json says ${entry.version}, the tag says ${version}` };
 	const log = show(`${source}/CHANGELOG.md`);
 	const notes = log.status === 0 ? changelogSection(log.stdout, version) : null;
 	if (!notes) return { action: "error", tag, reason: `no "## [${version}]" section in ${source}/CHANGELOG.md at the tagged commit` };
@@ -147,17 +148,26 @@ export function planReleases(tags, ctx) {
 
 /** Publishes one release for an existing tag (`--verify-tag`: gh refuses if the tag is missing; it never creates one). */
 export function publish(runner, r) {
-	const notes = path.join(mkdtempSync(path.join(tmpdir(), "release-")), "notes.md");
-	writeFileSync(notes, `${r.notes}\n`);
-	const args = ["release", "create", r.tag, "--verify-tag", "--title", `${r.name} ${r.version}`, "--notes-file", notes];
-	if (r.prerelease) args.push("--prerelease");
-	ok(runner.gh(args), `creating the release for ${r.tag}`);
+	const dir = mkdtempSync(path.join(tmpdir(), "release-"));
+	try {
+		const notes = path.join(dir, "notes.md");
+		writeFileSync(notes, `${r.notes}\n`);
+		const args = ["release", "create", r.tag, "--verify-tag", "--title", `${r.name} ${r.version}`, "--notes-file", notes];
+		if (r.prerelease) args.push("--prerelease");
+		ok(runner.gh(args), `creating the release for ${r.tag}`);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 }
 
 /** The whole script: returns the exit code. */
 export function main(argv, env = process.env, runner = realRunner(process.cwd()), log = console.log, logError = console.error) {
 	const dry = argv.includes("--dry-run");
 	const i = argv.indexOf("--tag");
+	if (i !== -1 && (argv[i + 1] === undefined || argv[i + 1].startsWith("--") || !argv[i + 1].trim())) {
+		logError("--tag needs a value"); // never fall back to catch-up (every unreleased tag) by accident
+		return 1;
+	}
 	const one = ((i !== -1 ? argv[i + 1] : env.RELEASE_TAG) || "").trim();
 	try {
 		if (runner.git(["fetch", "--quiet", "origin"]).status !== 0) logError("warning: git fetch failed; origin/main may be stale"); // best effort

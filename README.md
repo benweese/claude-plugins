@@ -90,7 +90,7 @@ node scripts/sync-shared.mjs                     # after editing shared/ (a test
 
 **Releasing a plugin:**
 1. In a PR, bump `version` in `plugins/<name>/.claude-plugin/plugin.json`, in its entry in `.claude-plugin/marketplace.json` and in the table above (CI fails if they differ), and add a `## [<version>] - <date>` section to its `CHANGELOG.md`.
-2. Merge the PR.
+2. Merge the PR. **Merge first, then tag.** A tag on a commit that isn't on `main` yet fails with "tagged commit is not on main", and nothing retries it. After merging, you'd have to start **Release plugins** by hand with that tag.
 3. On an up-to-date `main`, run `cd plugins/<name> && claude plugin tag --dry-run`. If it looks right, run `claude plugin tag --push`. That creates and pushes a **signed annotated** `<name>--v<version>` tag, the format [Claude Code's dependency resolution](https://code.claude.com/docs/en/plugin-dependencies) reads. It needs a working GPG or SSH signing setup (`tag.gpgSign = true`), with the key added to your GitHub account as a **signing** key.
 4. The pushed tag runs `release.yml`, which publishes the release. It never creates a tag. For each tag, in this order:
    1. **Already released?** If that version has a release (under `<name>--v<version>` or the old `<name>-v<version>`), it's skipped.
