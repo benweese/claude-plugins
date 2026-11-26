@@ -69,3 +69,34 @@ test("false for a missing argv[1], a missing selfUrl, a path that doesn't exist,
 test("is-main.mjs is registered in sync-shared COPIES", () => {
 	assert.ok(Array.isArray(COPIES["shared/is-main.mjs"]));
 });
+
+test("realpath throwing → falls back to comparing resolved paths (the old check), never a silent no-op", (t) => {
+	const self = pathToFileURL(SOURCE).href;
+	const throws = () => {
+		const e = new Error("EACCES: permission denied");
+		e.code = "EACCES";
+		throw e;
+	};
+	assert.equal(isMain(SOURCE, self, throws), true, "the script's own path still matches");
+	assert.equal(isMain(path.relative(process.cwd(), SOURCE), self, throws), true, "a relative argv[1] resolves to the same path");
+	assert.equal(isMain(path.join(ROOT, "scripts", "sync-shared.mjs"), self, throws), false, "a different file doesn't");
+	assert.equal(isMain(undefined, self, throws), false, "a missing argv[1] is still false");
+	assert.equal(isMain(SOURCE, undefined, throws), false, "a missing selfUrl is still false");
+	const link = linkTo(SOURCE, t);
+	if (!link) return;
+	assert.equal(isMain(link, self), true, "with a working realpath, a symlink matches");
+	assert.equal(isMain(link, self, throws), false, "in the fallback, a symlinked path doesn't (the old limitation, only in this edge case)");
+});
+
+test("realpath throwing on only one side still falls back on both sides (no mixing of real and resolved paths)", (t) => {
+	const self = pathToFileURL(SOURCE).href;
+	const link = linkTo(SOURCE, t); // a real realpath would map this to SOURCE (→ true); the fallback must not
+	if (!link) return;
+	const throwsFor = (bad) => (p) => {
+		if (p === bad) throw new Error("ENOENT");
+		return p;
+	};
+	assert.equal(isMain(link, self, throwsFor(link)), false, "throws for argv[1]: plain resolved paths compared");
+	assert.equal(isMain(link, self, throwsFor(SOURCE)), false, "throws for the script: plain resolved paths compared");
+	assert.equal(isMain(SOURCE, self, throwsFor(SOURCE)), true, "the script's own path still matches");
+});
