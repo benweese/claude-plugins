@@ -71,7 +71,7 @@ CHANGELOG.md                      marketplace-level changes (each plugin has its
 | `actionlint.yml` | when workflows change | the workflow files (actionlint in a container) |
 | `codeql.yml` | PRs, pushes to `main`, weekly | code scanning: JavaScript/TypeScript and the workflows |
 | `pages.yml` | pushes to `main` that change docs | publishes the [docs site](https://code.benweese.com/claude-plugins/) |
-| `release.yml` | pushes to `main` that change a plugin's version or CHANGELOG | for each plugin version without a tag: tags `<plugin>-v<version>` and publishes a GitHub release with that CHANGELOG section |
+| `release.yml` | a pushed `<plugin>--v<version>` tag; or by hand (one tag, or every `--v` tag without a release) | publishes a GitHub release for a signed tag that passes the checks below, with that version's CHANGELOG section as the notes; never creates a tag |
 | `claude-review.yml` | the owner's ready (non-draft) PRs | Claude reviews the PR (comments only; never pushes). Not on fork PRs |
 | `claude.yml` | `@claude` in the owner's comments | Claude answers or reviews (can't push) |
 | `skill-eval.yml` | **only** the `eval` label on a PR, or started by hand | grades the changed skills (or one named skill) against their `evals/` cases, one skill per job, pass mark 80% |
@@ -88,7 +88,28 @@ node --test plugins/*/test/*.test.mjs test/*.test.mjs examples/sample-app/server
 node scripts/sync-shared.mjs                     # after editing shared/ (a test fails if copies differ)
 ```
 
-**Releasing a plugin:** bump `version` in `plugins/<name>/.claude-plugin/plugin.json`, in its entry in `.claude-plugin/marketplace.json` and in the table above (CI fails if they differ), and add a `## [<version>] - <date>` section to its `CHANGELOG.md`. When that merges, `release.yml` tags `<name>-v<version>` and publishes the GitHub release from the CHANGELOG section (it stops if the section is missing). Preview with `node scripts/release.mjs --dry-run`.
+**Releasing a plugin:**
+1. In a PR, bump `version` in `plugins/<name>/.claude-plugin/plugin.json`, in its entry in `.claude-plugin/marketplace.json` and in the table above (CI fails if they differ), and add a `## [<version>] - <date>` section to its `CHANGELOG.md`.
+2. Merge the PR. **Merge first, then tag.** A tag on a commit that isn't on `main` yet fails with "tagged commit is not on main", and nothing retries it. After merging, you'd have to start **Release plugins** by hand with that tag.
+3. On an up-to-date `main`, run `cd plugins/<name> && claude plugin tag --dry-run`. If it looks right, run `claude plugin tag --push`. That creates and pushes a **signed annotated** `<name>--v<version>` tag, the format [Claude Code's dependency resolution](https://code.claude.com/docs/en/plugin-dependencies) reads. It needs a working GPG or SSH signing setup (`tag.gpgSign = true`), with the key added to your GitHub account as a **signing** key.
+4. The pushed tag runs `release.yml`, which publishes the release. It never creates a tag. For each tag, in this order:
+   1. **Already released?** If that version has a release (under `<name>--v<version>` or the old `<name>-v<version>`), it's skipped.
+   2. **On main?** The tagged commit must be on `main` (an ancestor of `origin/main`). Otherwise: "tagged commit is not on main".
+   3. **Signed?** The tag must be annotated, with a signature GitHub reports as verified. Otherwise: "lightweight tag", "annotated but unsigned", or "signature not verified by GitHub (<reason>)".
+   4. **Versions match?** At the tagged commit, `plugin.json` and the `marketplace.json` entry must both say the tag's version.
+   5. **Release notes?** At the tagged commit, the plugin's `CHANGELOG.md` must have a `## [<version>]` section. Its body becomes the release notes. A version with a pre-release part (`1.0.0-beta.1`) is published as a pre-release.
+
+**Trust model.** The workflow checks out `main` and runs **main's** `release.mjs`, which reads the tagged commit with `git show`. That fixes a stale script in an old tag. It doesn't protect against a malicious tag: on a tag push, GitHub reads the *workflow file* from the tagged commit, so whoever can push a `*--v*` tag controls what runs. The real protection is repository rulesets:
+- a **tag ruleset** on `refs/tags/*--v*` that restricts creating, updating and deleting those tags to the repo admin (the maintainer)
+- the **branch ruleset** on `main`: pull requests required, no force pushes, no deletion
+
+The release check accepts any signing key GitHub verifies for the tagger. There's no allowlist of taggers or keys, because with the tag ruleset only the maintainer can create these tags. Rulesets can't tell the maintainer apart from tools running with the maintainer's own credentials, Claude Code included.
+
+**Push tags one at a time.** `claude plugin tag --push` pushes one tag. GitHub doesn't start tag-push runs when more than 3 tags are pushed at once, and older pending runs in a shared concurrency group get cancelled; the workflow uses one group per tag. If a tag was missed, the empty-tag catch-up below releases it.
+
+**After the first real tag push** on this flow, check that the push-triggered **Release plugins** run released it. If it didn't, start the workflow by hand with that tag.
+
+A failed check means no release for that tag, with the reason in the workflow log. To re-run a tag, or to catch up every `--v` tag without a release, start **Release plugins** by hand. Preview locally with `node scripts/release.mjs --dry-run` (add `--tag <name>--v<version>` for one tag). Old tags and releases are left as they are.
 
 **Skill evals:** each skill has 3–5 cases in `skills/<skill>/evals/*.yaml` ([format](https://github.com/skill-bench/skill-eval-action#eval-case-format)), including one that shouldn't trigger it. They run on the Anthropic API, so they **cost money** (a few cents per case, paid from a dedicated key with a low spend limit): add the `eval` label to a PR to grade the skills it changes, or run **Skill Eval** by hand for one skill (`<plugin>/<skill>`). They never run automatically. Playwright's vendored `qa:playwright-cli` has no evals.
 

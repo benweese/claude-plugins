@@ -11,6 +11,12 @@ Changes to the **`benweese` marketplace** itself: plugins added or removed, CI a
 | privacy | [plugins/privacy/CHANGELOG.md](plugins/privacy/CHANGELOG.md) |
 | accessibility | [plugins/accessibility/CHANGELOG.md](plugins/accessibility/CHANGELOG.md) |
 
+## 2026-11-25
+
+### Changed
+
+- **Releases now come from signed tags you push.** `release.yml` no longer runs on pushes to `main` or creates tags. You make a signed annotated `<plugin>--v<version>` tag with `claude plugin tag --push`; the format is the one Claude Code's plugin dependency resolution reads. Pushing it runs the workflow, which publishes the GitHub release only after its checks pass, in order: not already released (under the `--v` or old `-v` name) → tagged commit on `main` → annotated with a GitHub-verified signature → `plugin.json` and `marketplace.json` match the tag at that commit → a CHANGELOG section for the version. It can also be started by hand for one tag or to catch up every `--v` tag. Old tags and releases are unchanged. See "Releasing a plugin" in the README.
+
 ## 2026-11-22
 
 ### Changed

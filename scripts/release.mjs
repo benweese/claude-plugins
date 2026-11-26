@@ -1,10 +1,18 @@
-// Releases plugins whose version has no tag yet: tags <plugin>-v<version> and publishes a GitHub release whose
-// notes are that version's section of the plugin's CHANGELOG.md. Versions stay hand-bumped in plugin.json (CI keeps
-// plugin.json, marketplace.json and the README in step); this only publishes what's on main.
+// Publishes GitHub releases for signed <plugin>--v<version> tags that the maintainer already pushed (made with
+// `claude plugin tag --push`). It never creates, moves or pushes a tag. For each tag, in this order:
+//   1. skip it if that version already has a release (under <plugin>--v<version> or the old <plugin>-v<version>)
+//   2. the tagged commit must be on main (an ancestor of origin/main)
+//   3. the tag must be annotated, with a signature GitHub reports as verified
+//   4. at the tagged commit, plugin.json and the marketplace.json entry must both say the tag's version
+//   5. at the tagged commit, the plugin's CHANGELOG.md must have a "## [<version>]" section (the release notes)
+// A failed check is an error for that tag (no release); the others still run, and the exit code is 1.
 //
-//   node scripts/release.mjs [--dry-run]      (CI: .github/workflows/release.yml, with gh and GITHUB_TOKEN)
+//   node scripts/release.mjs [--dry-run] [--tag <plugin>--v<version>]
+//   CI: .github/workflows/release.yml on a pushed *--v* tag (that tag), or by hand (one tag, or every --v tag
+//   without a release). RELEASE_TAG in the environment works like --tag. Needs gh with a token that can read the
+//   repo and create releases.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,48 +29,184 @@ export function changelogSection(text, version) {
 	return body || null;
 }
 
-/** What to release: [{name, version, tag, notes}] for plugins whose tag isn't in `tags`. Throws on a missing CHANGELOG section. */
-export function plan(root, tags) {
-	const market = JSON.parse(readFileSync(path.join(root, ".claude-plugin", "marketplace.json"), "utf8"));
-	const out = [];
-	for (const p of market.plugins) {
-		const dir = path.join(root, p.source);
-		const { version } = JSON.parse(readFileSync(path.join(dir, ".claude-plugin", "plugin.json"), "utf8"));
-		const tag = `${p.name}-v${version}`;
-		if (tags.has(tag)) continue;
-		const notes = changelogSection(readFileSync(path.join(dir, "CHANGELOG.md"), "utf8"), version);
-		if (!notes) throw new Error(`${p.name} ${version}: no "## [${version}]" section in ${path.join(p.source, "CHANGELOG.md")} — add one before releasing`);
-		out.push({ name: p.name, version, tag, notes });
+/** <plugin>--v<version> (semver, optional pre-release) → {plugin, version}, or null. "--v" must appear exactly once,
+ *  so a name like a--v1.0.0--v2.0.0 (which could be read as plugin "a" or "a--v1.0.0") is rejected. */
+export function parseTag(tag) {
+	if (String(tag).split("--v").length !== 2) return null;
+	const m = /^([a-z0-9][a-z0-9-]*?)--v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(String(tag));
+	return m ? { plugin: m[1], version: m[2] } : null;
+}
+
+/** Runs a command; {status, stdout, stderr}. */
+const exec = (cmd, args, cwd) => {
+	const r = spawnSync(cmd, args, { cwd, encoding: "utf8" });
+	return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || (r.error ? r.error.message : "") };
+};
+
+/** The real git and gh, run in `root`. Tests pass their own runner with the same shape. */
+export const realRunner = (root) => ({ git: (args) => exec("git", args, root), gh: (args) => exec("gh", args, root) });
+
+/** stdout of a call that must succeed. */
+function ok(r, what) {
+	if (r.status !== 0) throw new Error(`${what}: ${(r.stderr || r.stdout).trim()}`);
+	return r.stdout;
+}
+
+/** JSON.parse that returns undefined instead of throwing. */
+function parseJson(text) {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+}
+
+/** Tag names that already have a GitHub release. */
+export function publishedTags(runner, repo) {
+	const out = ok(runner.gh(["api", "--paginate", `repos/${repo}/releases`, "--jq", ".[].tag_name"]), "listing releases");
+	return new Set(out.split("\n").filter(Boolean));
+}
+
+/** Every <plugin>--v<version> tag on origin. */
+export function remoteReleaseTags(runner) {
+	const out = ok(runner.git(["ls-remote", "--tags", "origin"]), "listing tags");
+	const names = out.split("\n").map((l) => l.split("\t")[1] || "").filter((r) => r.startsWith("refs/tags/") && !r.endsWith("^{}")).map((r) => r.slice("refs/tags/".length)).filter((t) => parseTag(t));
+	return [...new Set(names)];
+}
+
+/** What GitHub says about a tag: {kind: "lightweight" | "annotated" | "nested", commit, verified, reason}. */
+function tagFacts(runner, repo, tag) {
+	const ref = parseJson(ok(runner.gh(["api", `repos/${repo}/git/ref/tags/${tag}`]), `reading the tag ${tag}`));
+	if (typeof ref?.object?.type !== "string" || typeof ref.object.sha !== "string") throw new Error(`GitHub's response for the tag ${tag} isn't valid (git/ref/tags)`);
+	if (ref.object.type === "commit") return { kind: "lightweight", commit: ref.object.sha };
+	const obj = parseJson(ok(runner.gh(["api", `repos/${repo}/git/tags/${ref.object.sha}`]), `reading the tag object of ${tag}`));
+	if (typeof obj?.object?.type !== "string" || typeof obj.object.sha !== "string") throw new Error(`GitHub's response for the tag object of ${tag} isn't valid (git/tags)`);
+	if (obj.object.type !== "commit") return { kind: "nested", commit: null };
+	return { kind: "annotated", commit: obj.object.sha, verified: obj.verification?.verified === true, reason: obj.verification?.reason || "unknown" };
+}
+
+/**
+ * Checks one tag, in the order above: {action: "release", tag, name, version, notes, prerelease} |
+ * {action: "skip", tag, reason} | {action: "error", tag, reason}.
+ * @param {string} tag
+ * @param {{runner: object, repo: string, published: Set<string>, mainRef?: string}} ctx
+ */
+export function checkTag(tag, { runner, repo, published, mainRef = "origin/main" }) {
+	const parsed = parseTag(tag);
+	if (!parsed) return { action: "error", tag, reason: "not a <plugin>--v<version> tag" };
+	const { plugin, version } = parsed;
+	const old = `${plugin}-v${version}`;
+	if (published.has(tag) || published.has(old)) return { action: "skip", tag, reason: `already released (${published.has(tag) ? tag : old})` };
+	let facts;
+	try {
+		facts = tagFacts(runner, repo, tag);
+	} catch (e) {
+		return { action: "error", tag, reason: e.message };
+	}
+	if (facts.kind === "nested") return { action: "error", tag, reason: "the tag points to another tag, not a commit" };
+	if (runner.git(["cat-file", "-e", `${facts.commit}^{commit}`]).status !== 0) return { action: "error", tag, reason: `tagged commit ${facts.commit.slice(0, 7)} isn't in this checkout (fetch-depth: 0?)` };
+	const onMain = runner.git(["merge-base", "--is-ancestor", facts.commit, mainRef]);
+	if (onMain.status === 1) return { action: "error", tag, reason: "tagged commit is not on main" };
+	if (onMain.status !== 0) return { action: "error", tag, reason: `couldn't check the tagged commit against ${mainRef}: ${onMain.stderr.trim()}` };
+	if (facts.kind === "lightweight") return { action: "error", tag, reason: "lightweight tag, not released (make it with `claude plugin tag --push`)" };
+	if (!facts.verified) {
+		return { action: "error", tag, reason: facts.reason === "unsigned" ? "annotated but unsigned" : `signature not verified by GitHub (${facts.reason})` };
+	}
+	const show = (p) => runner.git(["show", `${facts.commit}:${p}`]);
+	const short = facts.commit.slice(0, 7);
+	const marketFile = show(".claude-plugin/marketplace.json");
+	if (marketFile.status !== 0) return { action: "error", tag, reason: `no .claude-plugin/marketplace.json at ${short}` };
+	const market = parseJson(marketFile.stdout);
+	if (!market || typeof market !== "object") return { action: "error", tag, reason: `marketplace.json at ${short} is not valid JSON` };
+	const entry = (Array.isArray(market.plugins) ? market.plugins : []).find((p) => p?.name === plugin);
+	if (!entry) return { action: "error", tag, reason: `no plugin "${plugin}" in marketplace.json at the tagged commit` };
+	if (typeof entry.source !== "string" || !entry.source.startsWith("./")) return { action: "error", tag, reason: `only local ./ sources are supported (marketplace.json "${plugin}" source at ${short})` };
+	const source = entry.source.replace(/^\.\//, "").replace(/\/+$/, "");
+	const manifest = show(`${source}/.claude-plugin/plugin.json`);
+	if (manifest.status !== 0) return { action: "error", tag, reason: `no ${source}/.claude-plugin/plugin.json at the tagged commit` };
+	const pjson = parseJson(manifest.stdout);
+	if (!pjson || typeof pjson !== "object") return { action: "error", tag, reason: `plugin.json at ${short} is not valid JSON (${source}/.claude-plugin/plugin.json)` };
+	const pj = pjson.version;
+	if (pj !== version) return { action: "error", tag, reason: `plugin.json says ${pj}, the tag says ${version}` };
+	if (entry.version === undefined) return { action: "error", tag, reason: "marketplace.json entry has no version" };
+	if (entry.version !== version) return { action: "error", tag, reason: `marketplace.json says ${entry.version}, the tag says ${version}` };
+	const log = show(`${source}/CHANGELOG.md`);
+	const notes = log.status === 0 ? changelogSection(log.stdout, version) : null;
+	if (!notes) return { action: "error", tag, reason: `no "## [${version}]" section in ${source}/CHANGELOG.md at the tagged commit` };
+	return { action: "release", tag, name: plugin, version, notes, prerelease: version.includes("-") };
+}
+
+/** Checks each tag: {release: [...], skip: [...], errors: [...]}. */
+export function planReleases(tags, ctx) {
+	const out = { release: [], skip: [], errors: [] };
+	for (const tag of tags) {
+		const r = checkTag(tag, ctx);
+		(r.action === "release" ? out.release : r.action === "skip" ? out.skip : out.errors).push(r);
 	}
 	return out;
 }
 
-const run = (cmd, args) => {
-	const r = spawnSync(cmd, args, { encoding: "utf8" });
-	if (r.status !== 0) throw new Error(`${cmd} ${args.join(" ")}: ${(r.stderr || r.stdout).trim()}`);
-	return r.stdout;
-};
-
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-	const dry = process.argv.includes("--dry-run");
+/** Publishes one release for an existing tag (`--verify-tag`: gh refuses if the tag is missing; it never creates one). */
+export function publish(runner, r) {
+	const dir = mkdtempSync(path.join(tmpdir(), "release-"));
 	try {
-		run("git", ["fetch", "--tags", "--quiet"]);
-		const tags = new Set(run("git", ["tag", "--list"]).split("\n").filter(Boolean));
-		const todo = plan(process.cwd(), tags);
-		if (!todo.length) console.log("Nothing to release: every plugin's version is already tagged.");
-		const target = process.env.GITHUB_SHA || run("git", ["rev-parse", "HEAD"]).trim();
-		for (const r of todo) {
+		const notes = path.join(dir, "notes.md");
+		writeFileSync(notes, `${r.notes}\n`);
+		const args = ["release", "create", r.tag, "--verify-tag", "--title", `${r.name} ${r.version}`, "--notes-file", notes];
+		if (r.prerelease) args.push("--prerelease");
+		ok(runner.gh(args), `creating the release for ${r.tag}`);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+/** The whole script: returns the exit code. */
+export function main(argv, env = process.env, runner = realRunner(process.cwd()), log = console.log, logError = console.error) {
+	const dry = argv.includes("--dry-run");
+	// --tag <value> or --tag=<value>; undefined = not given (then RELEASE_TAG, then catch-up)
+	const eq = argv.find((a) => a.startsWith("--tag="));
+	const i = argv.indexOf("--tag");
+	const given = eq !== undefined ? eq.slice("--tag=".length) : i !== -1 ? (argv[i + 1] === undefined || argv[i + 1].startsWith("--") ? "" : argv[i + 1]) : undefined;
+	if (given !== undefined && !given.trim()) {
+		logError("--tag needs a value"); // never fall back to catch-up (every unreleased tag) by accident
+		return 1;
+	}
+	const one = (given ?? env.RELEASE_TAG ?? "").trim();
+	try {
+		if (runner.git(["fetch", "--quiet", "origin"]).status !== 0) logError("warning: git fetch failed; origin/main may be stale"); // best effort
+		const repo = env.GITHUB_REPOSITORY || ok(runner.gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]), "finding the repo").trim();
+		const tags = one ? [one] : remoteReleaseTags(runner);
+		const plan = planReleases(tags, { runner, repo, published: publishedTags(runner, repo) });
+		for (const s of plan.skip) log(`skip ${s.tag}: ${s.reason}`);
+		for (const r of plan.release) {
 			if (dry) {
-				console.log(`would release ${r.tag} at ${target.slice(0, 7)}:\n${r.notes}\n`);
+				log(`would release ${r.tag}${r.prerelease ? " (pre-release)" : ""}:\n${r.notes}\n`);
 				continue;
 			}
-			const notes = path.join(mkdtempSync(path.join(tmpdir(), "release-")), "notes.md");
-			writeFileSync(notes, `${r.notes}\n`);
-			run("gh", ["release", "create", r.tag, "--target", target, "--title", `${r.name} ${r.version}`, "--notes-file", notes]);
-			console.log(`released ${r.tag}`);
+			// Another run (or a person) may have released it since the plan: check again right before creating.
+			const now = publishedTags(runner, repo);
+			const old = `${r.name}-v${r.version}`;
+			if (now.has(r.tag) || now.has(old)) {
+				log(`skip ${r.tag}: already released (${now.has(r.tag) ? r.tag : old})`);
+				continue;
+			}
+			try {
+				publish(runner, r);
+				log(`released ${r.tag}`);
+			} catch (e) {
+				if (/already exists/i.test(e.message)) log(`skip ${r.tag}: already released (created while this run was going)`);
+				else plan.errors.push({ action: "error", tag: r.tag, reason: e.message });
+			}
 		}
+		for (const e of plan.errors) logError(`not released ${e.tag}: ${e.reason}`);
+		if (!plan.release.length && !plan.errors.length) log("Nothing to release.");
+		return plan.errors.length ? 1 : 0;
 	} catch (e) {
-		console.error(e.message);
-		process.exit(1);
+		logError(e.message);
+		return 1;
 	}
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	process.exitCode = main(process.argv.slice(2));
 }
