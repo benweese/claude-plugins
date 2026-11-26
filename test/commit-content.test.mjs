@@ -7,7 +7,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { capFragment, commitPlans, gitSub, normalizeCommand, resolveDir, runGitDefault, shellWords, splitCommands, splitWithOps, trackCommands, words } from "../shared/commit-content.mjs";
+import { capFragment, commitPlans, contentToCommit, gitSub, normalizeCommand, resolveDir, runGitDefault, ScanTimeout, scanBudget, shellWords, splitCommands, splitWithOps, trackCommands, words } from "../shared/commit-content.mjs";
 
 /** root/{a, b, my dir, a/inner}, a fake home with proj/, and a file (not a directory). */
 function fixture() {
@@ -521,4 +521,55 @@ test("real commands: a fixed list never spawns git; an unknown subcommand does; 
 	const failing = (args, o) => (args[0] === "--list-cmds=main,others" ? { status: 128, stdout: "", timedOut: false } : runGitDefault(args, o));
 	assert.deepEqual(commitPlans("git status", { ...f.opts, runGit: failing }), [], "no plan, no ask");
 	assert.deepEqual(commitPlans("git ci -m x", { ...f.opts, runGit: failing }), [{ unparsable: "commit" }], "an unknown subcommand needs the list");
+});
+
+// ---- #36: the content scan's own time budget ----
+function scanRepo() {
+	const dir = mkdtempSync(path.join(tmpdir(), "commit-content-scan-"));
+	const g = (...a) => spawnSync("git", a, { cwd: dir, encoding: "utf8" });
+	g("init", "-q", "-b", "main");
+	g("config", "user.email", "t@example.invalid");
+	g("config", "user.name", "T");
+	writeFileSync(path.join(dir, "a.txt"), "one\n");
+	g("add", ".");
+	g("commit", "-qm", "init");
+	writeFileSync(path.join(dir, "a.txt"), "one\ntwo\n");
+	writeFileSync(path.join(dir, "new.txt"), "fresh\n");
+	return dir;
+}
+const planAll = { all: false, addAll: true, addTracked: false, addPaths: [] };
+
+test("scan budget: within the budget, contentToCommit returns the same chunks as without one", () => {
+	const dir = scanRepo();
+	const plain = contentToCommit(dir, planAll);
+	assert.deepEqual(contentToCommit(dir, planAll, scanBudget(10_000)), plain);
+	assert.deepEqual(plain.map((c) => c.file).sort(), ["a.txt", "new.txt"]);
+});
+
+test("scan budget: a git call that times out throws ScanTimeout; every call gets at most the time left", () => {
+	const dir = scanRepo();
+	let t = 0;
+	const timeouts = [];
+	const runGit = (args, o) => {
+		timeouts.push(o.timeout);
+		if (args[0] === "diff" && !args.includes("--cached")) return { status: null, stdout: "", timedOut: true };
+		t += 1_000; // the --cached diff "takes" 1 s
+		return runGitDefault(args, o);
+	};
+	assert.throws(() => contentToCommit(dir, planAll, scanBudget(5_000, { now: () => t, runGit })), ScanTimeout);
+	assert.deepEqual(timeouts, [5_000, 4_000]);
+});
+
+test("scan budget: a spent budget throws before running git, or before reading the next untracked file", () => {
+	const dir = scanRepo();
+	const calls = [];
+	const runGit = (args, o) => (calls.push(args[0]), runGitDefault(args, o));
+	assert.throws(() => contentToCommit(dir, planAll, scanBudget(0, { runGit })), ScanTimeout);
+	assert.deepEqual(calls, [], "no git call once the budget is spent");
+	let t = 0;
+	const slowLs = (args, o) => {
+		if (args[0] === "ls-files") t += 10_000; // listing untracked files used up the budget
+		return runGitDefault(args, o);
+	};
+	assert.throws(() => contentToCommit(dir, planAll, scanBudget(5_000, { now: () => t, runGit: slowLs })), /untracked/);
 });

@@ -4,9 +4,10 @@
 // stages) for personal data, in the repo it runs in (following cd, pushd, env -C, sudo -D, git -C and wrappers
 // like env / command / sudo). A match → deny, values hidden. If the repo can't be determined, or an env -S
 // string mentions git → "ask". No network: a URL denylist is read from its local cache (`/privacy-scan refresh`).
+// The scan has a 20 s budget (the hook's timeout is 30 s): a git call that runs out of time → "ask".
 // Hook format: https://code.claude.com/docs/en/hooks
 import path from "node:path";
-import { capFragment, commitPlans, contentToCommit } from "./commit-content.mjs";
+import { capFragment, commitPlans, contentToCommit, ScanTimeout, scanBudget } from "./commit-content.mjs";
 
 export { capFragment } from "./commit-content.mjs";
 import { formatFindings, loadDenylist, loadPrivacyConfig, scanChunks } from "./detectors.mjs";
@@ -17,15 +18,24 @@ export const ASK_UNRESOLVED = "can't tell which repo this commits in; personal d
 export const ASK_SPLIT = "can't parse env -S; personal data not checked";
 export const ASK_UNPARSED = "can't parse this commit; personal data not checked";
 export const ASK_XARGS = "can't see xargs arguments; personal data not checked";
+export const ASK_TIMEOUT = "personal data scan timed out; personal data not checked";
 
-/** The whole hook, as data: {exit, json?}. The session project's config and denylist apply to every commit. */
-export function privacyPreBash(input, env = process.env) {
+/** The scan's time budget per hook run, well inside the hook's 30 s timeout (hooks/hooks.json). */
+export const SCAN_BUDGET_MS = 20_000;
+
+/**
+ * The whole hook, as data: {exit, json?}. The session project's config and denylist apply to every commit.
+ * @param {{budgetMs?: number, now?: () => number, runGit?: Function}} [opts] for tests: the scan budget (default
+ *   SCAN_BUDGET_MS), the clock, and the git runner for the scan and the alias lookups
+ */
+export function privacyPreBash(input, env = process.env, opts = {}) {
+	const budget = scanBudget(opts.budgetMs ?? SCAN_BUDGET_MS, { now: opts.now, runGit: opts.runGit });
 	const projectDir = env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
 	const cfg = loadPrivacyConfig(projectDir);
 	const warn = cfg.warning ? [cfg.warning] : [];
 	const line = String(input?.tool_input?.command || "");
 	const cwd = input.cwd || projectDir;
-	const plans = cfg.commitHook && line ? commitPlans(line, { cwd, env: { ...env, CLAUDE_PROJECT_DIR: projectDir } }) : [];
+	const plans = cfg.commitHook && line ? commitPlans(line, { cwd, env: { ...env, CLAUDE_PROJECT_DIR: projectDir }, now: opts.now, runGit: opts.runGit }) : [];
 	if (!plans.length) return { exit: 0, json: warn.length ? { systemMessage: warn.join("\n") } : undefined };
 	const asks = [];
 	const chunks = [];
@@ -34,10 +44,15 @@ export function privacyPreBash(input, env = process.env) {
 		else if (p.dir === null) asks.push(`${ASK_UNRESOLVED} (${capFragment(p.unresolved)})`);
 		else {
 			const where = path.resolve(p.dir) === path.resolve(cwd) ? "" : `${path.relative(cwd, p.dir) || "."}: `;
-			for (const c of contentToCommit(p.dir, p)) chunks.push({ ...c, file: `${where}${c.file}` });
+			try {
+				for (const c of contentToCommit(p.dir, p, budget)) chunks.push({ ...c, file: `${where}${c.file}` });
+			} catch (e) {
+				if (!(e instanceof ScanTimeout)) throw e;
+				asks.push(ASK_TIMEOUT);
+			}
 		}
 	}
-	const { entries, notes } = loadDenylist(projectDir, cfg);
+	const { entries, notes } = loadDenylist(projectDir, cfg, Date.now(), budget);
 	const findings = scanChunks(chunks, cfg, entries);
 	const extra = warn.concat(notes);
 	if (findings.length) {

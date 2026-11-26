@@ -2,6 +2,13 @@
 
 All notable changes to the `privacy` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.5] - 2026-11-25
+
+### Fixed
+
+- **A hung scan let the commit through.** If the commit scan ran past the hook's 30 s timeout (a stuck `git`, a slow network drive), Claude Code ran the commit unchecked. The scan now has its own 20 s budget per command, and each `git diff` / `git ls-files` / `git check-ignore` call is capped by the time left and killed when it runs out. A scan that runs out of time asks: "personal data scan timed out; personal data not checked". The denylist's gitignore check gives up quietly when there's no time left, because it only adds a note. The shared parsing (`shared/commit-content.mjs`) is the same as in guardrails 0.1.6.
+- **No `"onFailure": "block"` on the hook**, unlike guardrails 0.1.6. privacy is opt-in, but its hook runs on every Bash command, so a crash shouldn't block Bash in projects that never enabled it. A hook failure still lets the command through; the scan's own budget is what asks.
+
 ## [0.1.4] - 2026-11-25
 
 ### Fixed

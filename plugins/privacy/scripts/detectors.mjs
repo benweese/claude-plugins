@@ -104,9 +104,17 @@ export function parseDenylist(text) {
 	return out;
 }
 
-/** Is the path gitignored in this repo? (null = not a git repo / can't tell) */
-export function isGitignored(repo, file) {
-	const r = spawnSync("git", ["check-ignore", "-q", file], { cwd: repo });
+/** Longest `git check-ignore` may take: it only decides whether to add a note. */
+const CHECK_IGNORE_MS = 5_000;
+
+/**
+ * Is the path gitignored in this repo? (null = not a git repo / can't tell, including no time left or a timeout)
+ * @param {{left: () => number}} [budget] the hook's scan budget (scanBudget() in commit-content.mjs)
+ */
+export function isGitignored(repo, file, budget) {
+	const timeout = Math.min(CHECK_IGNORE_MS, budget ? budget.left() : CHECK_IGNORE_MS);
+	if (timeout <= 0) return null;
+	const r = spawnSync("git", ["check-ignore", "-q", file], { cwd: repo, timeout, killSignal: "SIGKILL" });
 	if (r.status === 0) return true;
 	if (r.status === 1) return false;
 	return null;
@@ -114,9 +122,10 @@ export function isGitignored(repo, file) {
 
 /**
  * Loads the denylist: a local path, or the cache of a URL (`/privacy-scan refresh` downloads it; hooks never
- * fetch). Returns entries and notes (missing / stale / not gitignored) — never a silent skip.
+ * fetch). Returns entries and notes (missing / stale / not gitignored) — never a silent skip. budget (optional) bounds
+ * the gitignore check.
  */
-export function loadDenylist(projectDir, cfg, nowMs = Date.now()) {
+export function loadDenylist(projectDir, cfg, nowMs = Date.now(), budget) {
 	const notes = [];
 	if (!cfg.denylist) return { entries: [], notes };
 	const isUrl = /^(?:https?:\/\/|gh:)/.test(cfg.denylist);
@@ -130,7 +139,7 @@ export function loadDenylist(projectDir, cfg, nowMs = Date.now()) {
 		if (days > CACHE_MAX_AGE_DAYS) notes.push(`denylist cache is ${Math.floor(days)} days old — run /privacy-scan refresh`);
 	}
 	const inside = !path.relative(projectDir, file).startsWith("..");
-	if (inside && isGitignored(projectDir, path.relative(projectDir, file)) === false) {
+	if (inside && isGitignored(projectDir, path.relative(projectDir, file), budget) === false) {
 		notes.push(`${path.relative(projectDir, file)} isn't gitignored — it holds the values you're protecting; add it to .gitignore`);
 	}
 	return { entries: parseDenylist(readFileSync(file, "utf8")), notes };

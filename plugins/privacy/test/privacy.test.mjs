@@ -8,8 +8,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { builtInDetectors, loadDenylist, loadPrivacyConfig, luhn, parseDenylist, scanChunks } from "../scripts/detectors.mjs";
-import { privacyPreBash, ASK_SPLIT, ASK_UNPARSED, ASK_UNRESOLVED, ASK_XARGS, capFragment } from "../scripts/pre-bash.mjs";
+import { builtInDetectors, isGitignored, loadDenylist, loadPrivacyConfig, luhn, parseDenylist, scanChunks } from "../scripts/detectors.mjs";
+import { privacyPreBash, ASK_SPLIT, ASK_TIMEOUT, ASK_UNPARSED, ASK_UNRESOLVED, ASK_XARGS, capFragment, SCAN_BUDGET_MS } from "../scripts/pre-bash.mjs";
+import { runGitDefault, scanBudget } from "../scripts/commit-content.mjs";
 import { refresh, scan } from "../scripts/scan.mjs";
 import { install } from "../bin/install-privacy-git-hook";
 
@@ -314,4 +315,67 @@ test("commit hook as a real hook: a git alias commit is denied; a shell alias ru
 	assert.equal(run('eval "git commit -m x"')?.permissionDecision, "deny", "a quoted eval string is parsed and scanned");
 	assert.equal(run('bash -c "git ci -m x"')?.permissionDecision, "deny", "an alias inside a bash -c string");
 	assert.equal(run("xargs git ci")?.permissionDecisionReason, `privacy: ${ASK_XARGS}.`, "xargs running an alias commit");
+});
+
+// ---- #36: a hung scan asks instead of failing open ----
+const HOOKS_JSON = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "hooks", "hooks.json");
+const phook = (cwd, command, opts) => privacyPreBash({ cwd, tool_input: { command } }, { CLAUDE_PROJECT_DIR: cwd }, opts).json?.hookSpecificOutput;
+const PASK = `privacy: ${ASK_TIMEOUT}.`;
+const realGitP = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+
+test("commit hook timeout: a git call that times out → ask with the timeout reason, never a pass", () => {
+	const r = emailRepo();
+	const runGit = (args, o) => (args[0] === "diff" ? { status: null, stdout: "", timedOut: true } : runGitDefault(args, o));
+	const out = phook(r.dir, "git commit -am x", { runGit });
+	assert.equal(out?.permissionDecision, "ask");
+	assert.equal(out.permissionDecisionReason, PASK);
+});
+
+test("commit hook timeout: a spent budget asks without running git; the default budget is 20 s, inside the 30 s hook timeout", () => {
+	const r = emailRepo();
+	const calls = [];
+	const runGit = (args, o) => (calls.push(args[0]), runGitDefault(args, o));
+	assert.equal(phook(r.dir, "git commit -am x", { runGit, budgetMs: 0 })?.permissionDecisionReason, PASK);
+	assert.ok(!calls.includes("diff"), "no diff once the budget is spent");
+	assert.equal(SCAN_BUDGET_MS, 20_000);
+	const hook = JSON.parse(readFileSync(HOOKS_JSON, "utf8")).hooks.PreToolUse[0].hooks[0];
+	assert.ok(hook.timeout * 1000 - SCAN_BUDGET_MS >= 10_000, "budget well inside the hook timeout");
+});
+
+test("commit hook timeout: a deny stays a deny when another commit times out; a clean commit is still silent", () => {
+	const here = emailRepo();
+	const other = repo({ version: 1, commitHook: true });
+	const runGit = (args, o) => (o.cwd === other.dir && args[0] === "diff" ? { status: null, stdout: "", timedOut: true } : runGitDefault(args, o));
+	const out = phook(here.dir, `git commit -am x && cd ${other.dir} && git commit -am y`, { runGit });
+	assert.equal(out?.permissionDecision, "deny");
+	assert.match(out.permissionDecisionReason, /readme\.md:2\s+email/);
+	assert.equal(phook(repo({ version: 1, commitHook: true }).dir, "git commit -am x", { runGit: runGitDefault }), undefined);
+});
+
+test("commit hook timeout: the denylist's gitignore check gives up (null) when no time is left", () => {
+	const r = repo({ version: 1, commitHook: true });
+	assert.equal(isGitignored(r.dir, "x.txt", scanBudget(0)), null);
+	assert.equal(isGitignored(r.dir, "x.txt", scanBudget(5_000)), false);
+});
+
+test("commit hook timeout (real process): a git that hangs on diff → ask within the budget", { skip: !unix || !realGitP }, () => {
+	const r = emailRepo();
+	const bin = mkdtempSync(path.join(tmpdir(), "slow-git-"));
+	writeFileSync(path.join(bin, "git"), `#!/bin/sh\nif [ "$1" = diff ]; then exec sleep 30; fi\nexec "${realGitP}" "$@"\n`);
+	chmodSync(path.join(bin, "git"), 0o755);
+	const old = process.env.PATH;
+	process.env.PATH = `${bin}${path.delimiter}${old}`;
+	const start = Date.now();
+	try {
+		assert.equal(phook(r.dir, "git commit -am x", { budgetMs: 1_500 })?.permissionDecisionReason, PASK);
+	} finally {
+		process.env.PATH = old;
+	}
+	assert.ok(Date.now() - start < 10_000, `took ${Date.now() - start} ms`);
+});
+
+test("hooks.json: the pre-bash hook has no onFailure (opt-in plugin: a crash mustn't block Bash for projects that never enabled it)", () => {
+	const hooks = JSON.parse(readFileSync(HOOKS_JSON, "utf8")).hooks.PreToolUse.flatMap((m) => m.hooks).filter((h) => h.command.includes("pre-bash.mjs"));
+	assert.equal(hooks.length, 1);
+	assert.equal("onFailure" in hooks[0], false);
 });

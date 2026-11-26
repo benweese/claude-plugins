@@ -2,6 +2,13 @@
 
 All notable changes to the `guardrails` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.6] - 2026-11-25
+
+### Fixed
+
+- **A hung scan let the commit through.** If the secret scan ran past the hook's 60 s timeout (a stuck `git` or `gitleaks`, a slow network drive), Claude Code ran the commit unchecked. The scan now has its own 40 s budget per command, and each `git diff` / `git ls-files` / `gitleaks` call is capped by the time left and killed when it runs out. A scan that runs out of time asks: "secret scan timed out; secrets not checked". If only gitleaks runs out of time, the built-in patterns check the commit instead ("checked with built-in patterns (gitleaks timed out)"); 5 s of the budget is kept back for that.
+- **The `pre-bash` hook sets `"onFailure": "block"`**, so on Claude Code v2.1.295 or later a hook that times out, crashes or can't start blocks the Bash command instead of letting it through. Older versions ignore the field: `claude plugin validate` on 2.1.200, 2.1.250 and 2.1.294 accepts it without a warning, and the 2.1.294 hook schema drops unknown keys (a live session on an older version wasn't run). There the scan's own budget is what asks.
+
 ## [0.1.5] - 2026-11-25
 
 ### Fixed
