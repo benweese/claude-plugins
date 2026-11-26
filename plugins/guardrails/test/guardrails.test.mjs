@@ -8,8 +8,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadConfig, splitCommands } from "../scripts/lib.mjs";
-import { ASK_SPLIT, ASK_TIMEOUT, ASK_UNRESOLVED, capFragment, commitPlans, dangerReasons, preBash, SCAN_BUDGET_MS, secretCheck } from "../scripts/pre-bash.mjs";
-import { runGitDefault } from "../scripts/commit-content.mjs";
+import { ASK_SPLIT, ASK_TIMEOUT, ASK_UNRESOLVED, capFragment, commitPlans, dangerChecks, ghMergeReason, parsePush, preBash, SCAN_BUDGET_MS, secretCheck } from "../scripts/pre-bash.mjs";
+import { runGitDefault, shellWords } from "../scripts/commit-content.mjs";
 import { protectedFiles } from "../scripts/protected-files.mjs";
 import { lintAfterEdit } from "../scripts/lint-after-edit.mjs";
 
@@ -130,15 +130,17 @@ test("secrets: off via config → the commit isn't checked; non-commit commands 
 	assert.equal(preBash(bash(on.dir, "git status"), env(on.dir), builtIn).json, undefined);
 });
 
-test("dangerous commands → ask (opt-in); the default branch comes from git", () => {
+test("dangerous commands → ask (opt-in); pushes to the default branch (read from git) are blocked", () => {
 	const r = repo({ config: { version: 1, dangerousCommands: true }, defaultBranch: "trunk" });
-	const ask = (cmd) => dangerReasons(cmd, r.dir, r.dir);
-	assert.match(ask("git push -f origin trunk")[0], /force-push to the default branch \(trunk\)/);
-	assert.match(ask("git push --force-with-lease")[0], /trunk/, "no refspec → the current branch (trunk)");
-	assert.match(ask("git push origin +trunk")[0], /trunk/);
-	assert.deepEqual(ask("git push -f origin feature/x"), []);
-	assert.deepEqual(ask("git push -f origin main"), [], "main isn't this repo's default branch");
-	assert.deepEqual(ask("git push origin trunk"), []);
+	const ask = (cmd) => dangerChecks(cmd, r.dir, r.dir).ask;
+	const block = (cmd) => dangerChecks(cmd, r.dir, r.dir).block;
+	assert.match(block("git push -f origin trunk")[0], /force-push to the default branch \(trunk\)/);
+	assert.match(block("git push --force-with-lease")[0], /push to the default branch \(trunk\)/, "no refspec → the current branch (trunk)");
+	assert.match(block("git push origin +trunk")[0], /trunk/);
+	assert.match(block("git push origin trunk")[0], /^push to the default branch \(trunk\)$/);
+	assert.deepEqual(block("git push origin feature/x"), []);
+	assert.deepEqual(block("git push origin main"), [], "main isn't this repo's default branch");
+	assert.match(block("git push -f origin main")[0], /force-push to main \(only --force-with-lease/, "a plain force-push to another branch");
 	assert.match(ask("git reset --hard HEAD~1")[0], /reset --hard/);
 	for (const c of ["git clean -fd", "git clean -fdx", "git clean -f -d", "git clean -xdf"]) assert.equal(ask(c).length, 1, c);
 	for (const c of ["git clean -n", "git clean -f"]) assert.deepEqual(ask(c), [], c);
@@ -359,7 +361,7 @@ test("secrets: every commit in the line is checked; a deny wins over an ask; sub
 
 test("dangerous: wrappers around rm are normalised; an unknown directory doesn't guess at relative targets", () => {
 	const r = repo({ config: { version: 1, dangerousCommands: true } });
-	const ask = (cmd) => dangerReasons(cmd, r.dir, r.dir);
+	const ask = (cmd) => dangerChecks(cmd, r.dir, r.dir).ask;
 	for (const c of ["sudo -u someone rm -rf /", "sudo -nu root rm -rf ~", "sudo -- rm -rf /", "/bin/rm -rf /", "\\rm -rf /", "env rm -rf /", "command rm -rf /", 'cd "$X" && rm -rf /', `cd "$X" && rm -rf ${r.dir}`]) assert.equal(ask(c).length, 1, c);
 	assert.deepEqual(ask('cd "$X" && rm -rf ..'), [], "relative to a directory that can't be determined: not judged");
 	assert.deepEqual(ask("sudo -u someone rm -rf node_modules"), []);
@@ -652,4 +654,153 @@ test("hooks.json: the pre-bash hook blocks the command when it fails or times ou
 	const preBashHooks = hooks.PreToolUse.flatMap((m) => m.hooks).filter((h) => h.command.includes("pre-bash.mjs"));
 	assert.equal(preBashHooks.length, 1);
 	assert.equal(preBashHooks[0].onFailure, "block");
+});
+
+// ---- #17: merges and pushes a person should do are blocked (opt-in dangerousCommands) ----
+/** An opted-in repo on `main` (init.defaultBranch=main), with a `feature` branch. */
+function pushRepo() {
+	const r = repo({ config: { version: 1, dangerousCommands: true }, defaultBranch: "main" });
+	r.g("branch", "feature");
+	return r;
+}
+const blocks = (r, cmd) => dangerChecks(cmd, r.dir, r.dir).block;
+
+test("block: gh pr merge and gh api merges (REST endpoint, both GraphQL mutations); other gh calls pass", () => {
+	for (const c of ["gh pr merge", "gh pr merge 12 --squash --delete-branch", "gh pr merge --auto --merge", "gh -R o/r pr merge 3", "gh pr merge -R o/r 3"]) assert.equal(ghMergeReason(shellWords(c)), "gh pr merge", c);
+	for (const c of ["gh api -X PUT repos/o/r/pulls/7/merge", "gh api repos/o/r/pulls/7/merge -X PUT -f merge_method=squash", "gh api /repos/{owner}/{repo}/pulls/7/merge", "gh api --method PUT repos/o/r/pulls/7/merge"]) assert.match(ghMergeReason(shellWords(c)) ?? "", /merges a pull request/, c);
+	assert.equal(ghMergeReason(shellWords(`gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'`)), "gh api graphql mergePullRequest");
+	assert.equal(ghMergeReason(shellWords(`gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {pullRequestId: "x"}) { clientMutationId } }'`)), "gh api graphql enablePullRequestAutoMerge");
+	for (const c of ["gh pr view 3", "gh pr list", "gh pr create --fill", "gh api repos/o/r/pulls/7", "gh api repos/o/r/pulls/7/merges-report", "gh api -X GET repos/o/r/issues", `gh api graphql -f query='{ viewer { login } }'`, "git merge feature"]) assert.equal(ghMergeReason(shellWords(c)), null, c);
+	const r = pushRepo();
+	assert.deepEqual(blocks(r, "gh pr merge 3 --auto"), ["gh pr merge"]);
+	assert.deepEqual(blocks(r, "gh pr view 3"), []);
+});
+
+test("block: any push to the default branch, by name, refspec, HEAD, a bare push, or the upstream", () => {
+	const r = pushRepo();
+	for (const c of ["git push origin main", "git push origin HEAD:main", "git push origin +main", "git push origin refs/heads/main", "git push origin +refs/heads/main", "git push origin feature:refs/heads/main", "git push origin feature:main", "git push --force-with-lease origin main", "git push -u origin main"]) {
+		assert.match(blocks(r, c).join(), /(push|force-push) to the default branch \(main\)/, c);
+	}
+	for (const c of ["git push", "git push origin", "git push origin HEAD", "git push origin @", "git push -f origin +HEAD", "git push --force-with-lease"]) assert.match(blocks(r, c).join(), /to the default branch \(main\)/, `${c} (on main)`);
+	assert.match(blocks(r, "git push -f origin HEAD")[0], /^force-push to the default branch \(main\)$/, "C: HEAD is resolved");
+	r.g("switch", "-q", "feature");
+	for (const c of ["git push origin HEAD", "git push", "git push --force-with-lease origin feature", "git push origin feature", "git push origin HEAD:feature"]) assert.deepEqual(blocks(r, c), [], `${c} (on feature)`);
+	// A feature branch whose upstream is main (push.default=upstream sends it there).
+	r.g("config", "branch.feature.remote", "origin");
+	r.g("config", "branch.feature.merge", "refs/heads/main");
+	assert.match(blocks(r, "git push")[0], /^push to the default branch \(main\) \(the upstream of feature\)$/);
+	assert.deepEqual(blocks(r, "git push origin feature"), [], "a named refspec isn't redirected");
+});
+
+test("block: deleting the default branch, --all, --mirror, push.default=matching", () => {
+	const r = pushRepo();
+	r.g("switch", "-q", "feature");
+	for (const c of ["git push origin :main", "git push origin --delete main", "git push -d origin main", "git push origin :refs/heads/main"]) assert.deepEqual(blocks(r, c), ["delete the default branch (main)"], c);
+	assert.deepEqual(blocks(r, "git push origin --delete feature"), [], "deleting a feature branch is allowed");
+	assert.match(blocks(r, "git push --all origin")[0], /push to every branch \(--all\), including the default branch \(main\)/);
+	assert.match(blocks(r, "git push --mirror origin")[0], /force-push to every branch \(--mirror\)/);
+	assert.match(blocks(r, "git push origin 'refs/heads/*:refs/heads/*'")[0], /every branch/);
+	r.g("config", "push.default", "matching");
+	assert.match(blocks(r, "git push origin")[0], /push\.default=matching/);
+	assert.deepEqual(blocks(r, "git push origin feature"), []);
+});
+
+test("block: --force / -f / +refspec to any other branch; --force-with-lease there is allowed", () => {
+	const r = pushRepo();
+	r.g("switch", "-q", "feature");
+	for (const c of ["git push -f origin feature", "git push --force origin feature", "git push origin +feature", "git push -uf origin feature", "git push -f", "git push --force-with-lease -f origin feature", "git push --force-with-lease origin +feature"]) {
+		assert.deepEqual(blocks(r, c), ["force-push to feature (only --force-with-lease is allowed on other branches)"], c);
+	}
+	for (const c of ["git push --force-with-lease origin feature", "git push --force-with-lease=feature:abc123 origin feature", "git push --force-with-lease --force-if-includes", "git push origin feature", "git push --tags", "git push -f origin --tags", "git push origin v1.2.0:refs/tags/v1.2.0"]) assert.deepEqual(blocks(r, c), [], c);
+});
+
+test("block: push option values aren't read as the remote (-o, --push-option, --repo)", () => {
+	assert.deepEqual(parsePush(shellWords("-o ci.skip -f origin")), { repo: "origin", refspecs: [], force: true, lease: false, all: false, mirror: false, del: false, tags: false });
+	assert.deepEqual(parsePush(shellWords("-oci.skip --receive-pack=x --exec y -fo z origin main")).refspecs, ["main"]);
+	assert.equal(parsePush(shellWords("--repo origin -f main")).repo, "main", "a positional repository wins over --repo");
+	const r = pushRepo();
+	// On main: each pushes main.
+	for (const c of ["git push -o ci.skip -f origin", "git push --repo=origin -f", "git push --push-option ci.skip origin"]) assert.match(blocks(r, c).join(), /to the default branch \(main\)/, `${c} (on main)`);
+	r.g("switch", "-q", "feature");
+	for (const c of ["git push -o ci.skip -f origin main", "git push --push-option=ci.skip -f origin main", "git push -o ci.skip origin main"]) assert.match(blocks(r, c).join(), /to the default branch \(main\)/, `${c} (on feature)`);
+	assert.deepEqual(blocks(r, "git push -o ci.skip -f origin"), ["force-push to feature (only --force-with-lease is allowed on other branches)"], "D: the current branch is checked");
+	// `--repo=origin -f main`: real git takes `main` as the repository and fails. Not a default-branch push here;
+	// it's a forced bare push of the current branch, which the force rule covers.
+	for (const c of ["git push --repo=origin -f main", "git push --repo origin -f main"]) assert.deepEqual(blocks(r, c), ["force-push to feature (only --force-with-lease is allowed on other branches)"], c);
+	assert.deepEqual(blocks(r, "git push --repo=origin main"), [], "unforced, on feature: allowed");
+});
+
+test("block: chains (&& ; |), bash -c / sh -c strings, git -C and -c before push", () => {
+	const r = pushRepo();
+	const other = pushRepo();
+	other.g("switch", "-q", "feature");
+	r.g("switch", "-q", "feature");
+	for (const c of ["make && git push origin main", "make; git push origin main", "echo x | git push origin main", "git status || git push origin main", `bash -c "git push origin main"`, `sh -c 'make && git push origin main'`, `bash -lc "sh -c 'git push origin main'"`, "git -c push.default=current push origin main", "sudo -u me git push origin main", "env FOO=1 git push origin main"]) {
+		assert.match(blocks(r, c).join(), /push to the default branch \(main\)/, c);
+	}
+	assert.deepEqual(blocks(r, `bash -c "git push origin feature"`), []);
+	assert.deepEqual(blocks(r, `echo "git push origin main"`), [], "a quoted mention isn't a push");
+	// -C points git at another repo: its current branch decides a bare push.
+	other.g("switch", "-q", "main");
+	assert.match(blocks(r, `git -C ${other.dir} push`).join(), /default branch \(main\)/);
+	assert.match(blocks(r, `cd ${other.dir} && git push`).join(), /default branch \(main\)/);
+	assert.deepEqual(blocks(r, "git push"), [], "here, on feature");
+	assert.match(blocks(r, `bash -c "cd ${other.dir} && git push"`).join(), /default branch \(main\)/, "a cd inside the string");
+});
+
+test("block: default branch from origin/HEAD, else init.defaultBranch, else main and master both", () => {
+	const r = pushRepo();
+	r.g("switch", "-q", "feature");
+	r.g("update-ref", "refs/remotes/origin/develop", "HEAD");
+	r.g("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop");
+	assert.match(blocks(r, "git push origin develop")[0], /default branch \(develop\)/, "origin/HEAD wins");
+	assert.deepEqual(blocks(r, "git push origin main"), [], "main isn't the default here");
+	r.g("symbolic-ref", "--delete", "refs/remotes/origin/HEAD");
+	r.g("config", "--unset", "init.defaultBranch");
+	const old = { g: process.env.GIT_CONFIG_GLOBAL, s: process.env.GIT_CONFIG_NOSYSTEM };
+	process.env.GIT_CONFIG_GLOBAL = path.join(r.dir, "no-such-gitconfig");
+	process.env.GIT_CONFIG_NOSYSTEM = "1";
+	try {
+		for (const b of ["main", "master"]) assert.match(blocks(r, `git push origin ${b}`)[0], new RegExp(`default branch \\(${b}\\)`), `unknown default → ${b} protected`);
+		assert.deepEqual(blocks(r, "git push origin develop"), []);
+	} finally {
+		for (const [k, v] of [["GIT_CONFIG_GLOBAL", old.g], ["GIT_CONFIG_NOSYSTEM", old.s]]) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+	}
+	// A folder that can't be determined: a named branch still counts (main / master); a bare push asks.
+	const d = dangerChecks('cd "$X" && git push origin main', r.dir, r.dir);
+	assert.match(d.block[0], /default branch \(main\)/);
+	const u = dangerChecks('cd "$X" && git push', r.dir, r.dir);
+	assert.deepEqual(u.block, []);
+	assert.match(u.ask[0], /can't tell which branch this pushes to/);
+});
+
+test("preBash: a block is a deny (wins over asks); off when dangerousCommands is false, missing or invalid, or BENWEESE_GUARDRAILS_OFF=dangerous", () => {
+	const r = pushRepo();
+	const out = preBash(bash(r.dir, "git reset --hard && git push origin main"), env(r.dir), builtIn).json.hookSpecificOutput;
+	assert.equal(out.permissionDecision, "deny");
+	assert.match(out.permissionDecisionReason, /^guardrails blocked this: push to the default branch \(main\)\. Merging a pull request or pushing to the default branch is for a person to do/);
+	assert.match(out.permissionDecisionReason, /"dangerousCommands": false/);
+	assert.equal(preBash(bash(r.dir, "gh pr merge 1"), env(r.dir), builtIn).json.hookSpecificOutput.permissionDecision, "deny");
+	assert.equal(preBash(bash(r.dir, "git reset --hard"), env(r.dir), builtIn).json.hookSpecificOutput.permissionDecision, "ask", "the existing checks still ask");
+	assert.equal(preBash(bash(r.dir, "git push origin main"), env(r.dir, { BENWEESE_GUARDRAILS_OFF: "dangerous" }), builtIn).json, undefined);
+	for (const config of [{ version: 1, dangerousCommands: false }, { version: 1 }, "{not json", { version: 2, dangerousCommands: true }, undefined]) {
+		const o = repo({ config, defaultBranch: "main" });
+		const res = preBash(bash(o.dir, "git push origin main && gh pr merge 1"), env(o.dir), builtIn).json;
+		assert.notEqual(res?.hookSpecificOutput?.permissionDecision, "deny", JSON.stringify(config));
+	}
+});
+
+test("as a real hook: a push to the default branch and gh pr merge are denied (exit 0 + one deny JSON line); a feature push passes", { skip: !unix }, () => {
+	const r = pushRepo();
+	const run = (command) => spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, command)), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir } });
+	for (const c of ["git push origin main", `bash -c "gh pr merge 4 --auto"`]) {
+		const res = run(c);
+		assert.equal(res.status, 0, c);
+		const lines = res.stdout.trim().split("\n");
+		assert.equal(lines.length, 1, c);
+		assert.equal(JSON.parse(lines[0]).hookSpecificOutput.permissionDecision, "deny", c);
+	}
+	const ok = run("git push origin feature");
+	assert.equal(ok.status, 0);
+	assert.equal(ok.stdout, "");
 });

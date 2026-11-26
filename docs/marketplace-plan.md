@@ -11,7 +11,7 @@ What the `benweese` marketplace will hold, how each plugin is configured per pro
 | `workflow` | 0.3.2 | `/board` (config-driven, read-only until go) and check. Hook (opt-in): session rules at SessionStart. Planned: `/release` |
 | `accessibility` | 0.1.2 | Helps Claude **build** accessible UI: `/a11y` (one-off axe scan with the project's own Playwright, plain-English fixes), a11y-reviewer agent, `a11y-contrast`. Testing lives in `qa` |
 | `privacy` | 0.1.5 | `/privacy-scan`, privacy-reviewer agent, opt-in commit blocker, plain-git hook installer |
-| `guardrails` | 0.1.6 | Secret blocker before `git commit` (on by default); opt-in protected files, dangerous-command confirm, lint after edit |
+| `guardrails` | 0.2.0 | Secret blocker before `git commit` (on by default); opt-in protected files, merge / default-branch push blocker and dangerous-command confirm, lint after edit |
 
 Every plugin folder has `.claude-plugin/plugin.json`, `README.md` and `CHANGELOG.md`, with `agents/`, `skills/` and `hooks/` as needed. Slash commands are skills (the docs recommend `skills/` over `commands/` for new plugins).
 
