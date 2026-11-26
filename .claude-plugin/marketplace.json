@@ -24,7 +24,7 @@
 			"name": "workflow",
 			"source": "./plugins/workflow",
 			"description": "/board for GitHub Projects (configured per repo), a lint check, and opt-in session rules.",
-			"version": "0.3.0",
+			"version": "0.3.1",
 			"category": "productivity"
 		},
 		{

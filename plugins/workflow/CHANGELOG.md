@@ -2,6 +2,12 @@
 
 All notable changes to the `workflow` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.3.1] - 2026-11-25
+
+### Changed
+
+- The session-rules hook's symlink-safe entry-point check (`isMain()`) moved out of `scripts/principles.mjs` into `scripts/is-main.mjs`, a synced copy of `shared/is-main.mjs` that every plugin now uses. The caller passes its own `import.meta.url`; there is no default. No behaviour change: the hook still works through a symlinked path.
+
 ## [0.3.0] - 2026-11-25
 
 ### Added

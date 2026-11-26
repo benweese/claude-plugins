@@ -1,6 +1,6 @@
 {
 	"name": "workflow",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "Repo workflow: /board (a GitHub Project board: show, check blockers, start an issue; configured in .claude/board.json), check (run the repo's lint), and opt-in session rules (a SessionStart hook that adds working rules to Claude's context; .claude/workflow.json).",
 	"author": {
 		"name": "Ben Weese",
