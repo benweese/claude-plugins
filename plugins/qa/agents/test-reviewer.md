@@ -42,6 +42,15 @@ review against anything else.
    `toContain("")`, `toBeGreaterThanOrEqual(0)`), assertions on values the test itself set, skipped or `fixme` tests
    counted as coverage.
 7. **Plan vs requirements:** list every difference.
+8. **Assertions:**
+   - **Hard expect without `// precondition`:** every `expect(…)` (not `expect.soft`) in the tests without a
+     `// precondition` comment on the same line. Playwright's `expect(test.info().errors).toHaveLength(0)` stop line
+     is fine.
+   - **Expect changed by a heal:** any `expect(…)` / `expect.soft(…)` line, or snapshot name, that changed after the
+     tests were first generated. Look at the history of the spec files on this branch
+     (`git log -p --follow -- <spec>`, and `git diff` for uncommitted changes) for expect lines changed in a heal
+     commit or after a healer run, and at the healer's report if you have it. Each one is a finding, whatever the
+     reason: the healer is never supposed to change an expect.
 
 ## Report — short, decisions first
 
@@ -67,6 +76,12 @@ review against anything else.
 
 ## Plan vs requirements
 - …
+
+## Assertions
+| Test | Finding |
+|---|---|
+| #0012 | hard expect without // precondition (line 41) |
+| #0013 | expect changed by a heal: "Total: $20" → "Total: $25" (commit abc123) |
 ```
 
 Statuses: covered, partial, gap, ambiguous. Quote requirement items in the request's words. Never change a test;

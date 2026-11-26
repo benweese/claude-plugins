@@ -73,6 +73,8 @@ Wait for approval. Apply their changes to the plan before going on.
 - API → **api-test-generator** with `plans/<feature>.md`.
 - UI → **ui-test-generator** with `plans/<feature>.md`.
 
+Tests use soft assertions by default: `expect.soft(…)`. A hard `expect(…)` is only for a precondition the rest of the test can't run without, marked `// precondition` on the same line. Any test you write or edit yourself follows the same rule.
+
 ## 6. Run and review
 
 ```bash
@@ -83,7 +85,7 @@ When the suite is green for this task, run **`/review-tests`** (it checks the te
 
 ## 7. Heal (UI only, if needed)
 
-Locator or timing failures → **ui-test-healer**. API failures are fixed in the spec or reported as bugs, not healed.
+Locator or timing failures → **ui-test-healer**. API failures are fixed in the spec or reported as bugs, not healed. The healer never changes an expect: when a failure is in an expect, it brings you a question (expected vs actual, and the requirement); put it to the user.
 
 ## Wrap up
 

@@ -1,6 +1,18 @@
 {
-	"description": "qa: after a Playwright test file is edited, lint it and check `playwright test --list` loads it; after the suite goes green, ask for a /review-tests run. Both opt-in per project via .claude/qa.json.",
+	"description": "qa: after a Playwright test file is edited, lint it, check `playwright test --list` loads it and warn on hard expects without // precondition; after the suite goes green, ask for a /review-tests run; while the ui-test-healer runs, block edits that change an expect or expected data. All opt-in per project via .claude/qa.json.",
 	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Edit|Write|MultiEdit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/healer-guard.mjs\"",
+						"timeout": 10
+					}
+				]
+			}
+		],
 		"PostToolUse": [
 			{
 				"matcher": "Edit|Write|MultiEdit",

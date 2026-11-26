@@ -115,7 +115,7 @@ It maps the page, drafts `plans/<feature>.md` and **stops for your review**. Onc
 | `api-test-planner` / `ui-test-planner` | Turn the description into numbered acceptance criteria, then hand-runnable scenarios that cover them. They check existing tests and clients first, so nothing is duplicated or invented. The API planner lists the schemas needed and leaves undocumented negative cases as open questions; the UI planner writes expected results from the requirement, not the page, lists the differences as expected findings, and checks every element can be located |
 | `api-test-generator`                   | Writes the spec and any planned client methods (typed and documented), generates and tightens JSON schemas with `UPDATE_SCHEMAS=true`, lints and runs                                                                                                                                                                                                                                                                                                      |
 | `ui-test-generator`                    | Checks the plan was approved, then writes locators → page object → spec, using the locators the live page actually exposes, in its own browser session. Deletes anything it creates while exploring                                                                                                                                                                                                                                                        |
-| `ui-test-healer`                       | Fixes drift, ambiguity and timing failures, one test at a time, in its own browser session, with at most 3 attempts per test. Marks plan-vs-page mismatches `test.fixme()` instead of changing the assertion                                                                                                                                                                                                                                               |
+| `ui-test-healer`                       | Fixes drift, ambiguity and timing failures, one test at a time, in its own browser session, with at most 3 attempts per test. **Never heals an expect:** an expect failure becomes a question for you (expected vs actual, and the requirement), or `test.fixme("<question>")` when no one can answer                                                                                                                                                                                                                                               |
 | `component-tester`                     | Writes component tests in the runner the repo already uses (see [Component tests](#component-tests)): states and variants, not flows, with accessibility checks on every state. Never picks or installs a runner |
 | `a11y-tester`                          | Writes and runs `tests/a11y/<page>.a11y.spec.ts` for one page (see [Accessibility tests](#accessibility-tests)). Test code only: a real accessibility bug stays a failing test and goes in the report |
 
@@ -166,7 +166,8 @@ After Claude edits a Playwright test file (`*.spec.ts`, `*.test.ts`, and the `.j
 
 1. finds the nearest `playwright.config.{ts,js,mjs,cjs}` at or above the file (so a suite in `e2e/` works);
 2. from that folder, runs the project's own ESLint on the file, then `playwright test --list <file>`;
-3. on a failure, hands the output back to Claude to fix (the edit stays); otherwise shows a one-line note with the elapsed time.
+3. on a failure, hands the output back to Claude to fix (the edit stays); otherwise shows a one-line note with the elapsed time;
+4. warns Claude about any hard `expect(…)` without a `// precondition` comment on the same line (assertions are soft by default; Playwright's `expect(test.info().errors).toHaveLength(0)` stop line is exempt).
 
 It uses only the project's `node_modules/.bin` tools and never downloads anything. If ESLint or `@playwright/test` isn't installed it says the check was skipped; it stops after 60 seconds. Outside a Playwright folder it does nothing.
 
@@ -177,6 +178,30 @@ It uses only the project's `node_modules/.bin` tools and never downloads anythin
 ```
 
 A missing or invalid file means off.
+
+## Healer guard (opt-in)
+
+**The healer never heals an expect.** Its instructions say so, and this hook enforces it. While the `ui-test-healer` is the agent making an edit (hook input `agent_type` is `ui-test-healer` or `<plugin>:ui-test-healer`, inside a subagent or in a session started with `claude --agent qa:ui-test-healer`), these are **blocked**, and the healer is told to ask you or mark the test `test.fixme("<question>")`:
+
+- in a `*.spec.*` / `*.test.*` file, an edit that adds, removes or changes a line containing `expect(`, `expect.soft(`, `expect.poll(` or `expect.configure(`, or a snapshot matcher line (`toHaveScreenshot`, `toMatchSnapshot`, `toMatchAriaSnapshot`: its snapshot name). Lines are compared trimmed, so re-indenting or moving a line is fine;
+- any edit to a file matching `"expectedData"`: globs relative to the project, `**` allowed.
+
+Locator, wait, navigation and setup lines pass, and so does adding `test.fixme`. Other agents and the main session aren't affected.
+
+```json
+{ "version": 1, "hooks": { "healerGuard": true }, "expectedData": ["tests/fixtures/expected/**", "tests/**/*-snapshots/**"] }
+```
+
+A missing or invalid file, or no `"healerGuard": true`, means off.
+
+**What it doesn't catch:**
+- a changed constant or variable that an expect reads
+- assertion helpers (`BasePage.expectText`, your own `expectX` functions), including a function made with `expect.configure` and called later under another name
+- the continuation lines of an expect split across lines: only the line with `expect(` is compared
+- a locator inside an expect line: changing it counts as changing the expect, so keep locators in `locators/`
+- writes through Bash (`sed`, `cat >`)
+
+`*:ui-test-healer` matches an agent with that name from any plugin, not only qa's.
 
 ## Review tests against the original request
 
@@ -213,7 +238,8 @@ After a green test run (`playwright test`, `npm test`, … — not `--list`, `--
 These rules exist because AI test authoring fails in predictable ways:
 
 - **Plan, review, then generate.** Duplicate scenarios, untestable criteria and wrong assumptions are cheapest to catch in a plan, before code exists.
-- **Assert the plan, not what you see.** An agent driving a live site will happily encode a bug as expected behaviour. Generators keep the plan's assertion, leave the test failing, and report the difference. The healer never changes an assertion to match the page: it marks the test `test.fixme()` with the expected and actual result, so the suite stays green while the bug is tracked in the test itself.
+- **Assert the plan, not what you see.** An agent driving a live site will happily encode a bug as expected behaviour. Generators keep the plan's assertion, leave the test failing, and report the difference. The healer never changes an expect: it asks you, with expected vs actual and the requirement, or marks the test `test.fixme("<question>")` when no one can answer, so the bug is tracked in the test itself. The opt-in [healer guard](#healer-guard-opt-in) blocks its expect edits.
+- **Soft assertions by default.** `expect.soft(…)` keeps a test running past a failed check, so one run shows every difference. A hard `expect(…)` is only for a precondition the rest of the test can't run without, marked `// precondition`.
 - **A healing budget.** Three attempts per test, then a `// Fixme:` note saying what was tried. Without a limit, a healer flips between locators forever.
 - **Two-tier locators.** Elements are acted on through `getBy*`, plus whatever the test repo's `tests/ui/CLAUDE.md` also allows (such as stable `data-*` attributes). When no good locator is unique on its own, the agent scopes to a good container first (the nearest meaningful parent, such as a form, dialog, row or card) and finds the element inside it. No XPath, generated class names or `.nth()`.
 - **Parallel, not serial.** Following Playwright's best practice, every test is isolated and can run in parallel. One failure in a serial block skips the rest and hides what they'd find, so a dependent journey is one test with a `test.step` per stage, and tests that share data create it per worker.
@@ -255,12 +281,13 @@ From the playwright-e2e-demo build. The guardrails above reduce these, but don't
 
 ### Convention or enforced
 
-Every guardrail in the agent prompts is a convention: the model is asked to follow it, and nothing stops it if it doesn't. What enforcement exists lives in the test repo's tooling, not in this plugin. playwright-e2e-demo enforces these:
+Every guardrail in the agent prompts is a convention: the model is asked to follow it, and nothing stops it if it doesn't. Most enforcement lives in the test repo's tooling; this plugin's opt-in hooks add the healer guard and the precondition warning. playwright-e2e-demo enforces these:
 
 | Guardrail                         | How it holds in playwright-e2e-demo                                                                                 |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Plan, review, then generate       | Convention. `author-tests` stops for review and the generators ask, but nothing blocks calling a generator directly |
-| Assert the plan, not what you see | Convention                                                                                                          |
+| Assert the plan, not what you see | Convention for generators. For the healer, enforced by the opt-in healer guard (edits only, not Bash)              |
+| Soft assertions by default        | Convention; the opt-in test-file hook warns on a hard `expect` without `// precondition`                            |
 | 3-attempt healing budget          | Convention: the healer counts its own attempts                                                                      |
 | Locator rules                     | Partly enforced. Lint fails on XPath and on `.first()`/`.nth()`/`.last()`. Class names and ids are convention       |
 | No fixed waits, no `networkidle`  | Enforced: lint errors                                                                                               |

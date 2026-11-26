@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // qa hook (PostToolUse on Edit | Write | MultiEdit): after a Playwright test file is edited, lint that
-// file with the repo's ESLint and check Playwright still loads it (`playwright test --list <file>`).
+// file with the repo's ESLint, check Playwright still loads it (`playwright test --list <file>`), and warn about
+// hard `expect(…)` lines without a `// precondition` comment (assertions are soft by default: `expect.soft`).
 //
 // Opt-in per project: does nothing unless .claude/qa.json is { "version": 1, "hooks": { "lintAfterEdit": true } }.
 // A missing or invalid config = off. No network: only the project's own node_modules/.bin tools.
 //   exit 0           nothing to do, or both checks passed (a short note with the elapsed time)
 //   exit 0 + note    a check was skipped (tool not installed, or the 60 s cap) — never a silent pass
 //   exit 2           ESLint or --list failed; stderr goes back to Claude to fix (the edit stays)
+//   + context        hard expects without `// precondition`: a warning Claude sees (additionalContext), any exit
 // Hook input/output: https://code.claude.com/docs/en/hooks
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -54,6 +56,20 @@ export function localBin(name, fromDir, projectDir) {
 	}
 }
 
+/** A hard expect: a bare `expect(` call (not expect.soft / expect.poll …). */
+const HARD_EXPECT = /(?<![\w$.])expect\s*\(/;
+/** Playwright's documented "stop after soft checks" line is hard on purpose, not a precondition. */
+const STOP_AFTER_SOFT = /expect\s*\(\s*test\.info\(\)\.errors\s*\)/;
+
+/** Line numbers (1-based) of hard expects without a `// precondition` comment on the same line. */
+export function hardExpectsWithoutPrecondition(text) {
+	const out = [];
+	String(text).split("\n").forEach((line, i) => {
+		if (HARD_EXPECT.test(line) && !STOP_AFTER_SOFT.test(line) && !/\/\/\s*precondition\b/.test(line)) out.push(i + 1);
+	});
+	return out;
+}
+
 const trim = (text) => (text.length > MAX_OUTPUT ? `${text.slice(0, MAX_OUTPUT)}\n… (cut)` : text).trim();
 const seconds = (ms) => `${(ms / 1000).toFixed(1)}s`;
 
@@ -66,17 +82,35 @@ function run(bin, args, cwd, budgetMs) {
 /**
  * The whole check, as data (so tests can call it without a child process).
  * @param {object} input Hook input from stdin. @param {object} env process.env.
- * @return {{exit: number, stderr?: string, note?: string}}
+ * @return {{exit: number, stderr?: string, note?: string, context?: string}}
  */
 export function check(input, env = process.env, now = Date.now) {
+	const r = checkFile(input, env, now);
+	if (!r.absFile) return r.result;
+	let lines = [];
+	try {
+		lines = hardExpectsWithoutPrecondition(readFileSync(r.absFile, "utf8"));
+	} catch {
+		/* unreadable: no warning */
+	}
+	if (!lines.length) return r.result;
+	const where = `${r.label}:${lines.slice(0, 10).join(",")}${lines.length > 10 ? ",…" : ""}`;
+	const warning = `hard expect without a // precondition comment at ${where}. Assertions are soft by default: use expect.soft(…), or keep expect(…) only for a precondition the rest of the test can't run without, with // precondition on the same line.`;
+	const result = { ...r.result, context: `qa hook: ${warning}` };
+	if (result.exit === 0) result.note = `${result.note} · ${lines.length} hard expect(s) without // precondition`;
+	return result;
+}
+
+/** lint + --list for one edited test file: {result, absFile?, label?} (absFile only when the file was checked). */
+function checkFile(input, env, now) {
 	const started = now();
 	const projectDir = env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
 	const filePath = input?.tool_input?.file_path;
-	if (!filePath || !TEST_FILE.test(filePath)) return { exit: 0 };
-	if (!hookEnabled(projectDir)) return { exit: 0 };
+	if (!filePath || !TEST_FILE.test(filePath)) return { result: { exit: 0 } };
+	if (!hookEnabled(projectDir)) return { result: { exit: 0 } };
 	const absFile = path.resolve(projectDir, filePath);
 	const pwRoot = findPlaywrightRoot(absFile, projectDir);
-	if (!pwRoot) return { exit: 0 }; // not a Playwright repo (or folder): nothing to check
+	if (!pwRoot) return { result: { exit: 0 } }; // not a Playwright repo (or folder): nothing to check
 	const rel = path.relative(pwRoot, absFile);
 	const label = path.relative(projectDir, absFile);
 	const skipped = [];
@@ -103,10 +137,10 @@ export function check(input, env = process.env, now = Date.now) {
 	const took = seconds(now() - started);
 	if (failed.length) {
 		const notes = skipped.length ? `\n${skipped.map((s) => `(${s})`).join("\n")}` : "";
-		return { exit: 2, stderr: `qa hook: ${label} (${took}, in ${path.relative(projectDir, pwRoot) || "."})\n${failed.join("\n\n")}${notes}` };
+		return { absFile, label, result: { exit: 2, stderr: `qa hook: ${label} (${took}, in ${path.relative(projectDir, pwRoot) || "."})\n${failed.join("\n\n")}${notes}` } };
 	}
-	if (skipped.length) return { exit: 0, note: `qa hook: ${label} (${took}) — ${skipped.join("; ")}` };
-	return { exit: 0, note: `qa hook: ${label} — lint + --list OK (${took})` };
+	if (skipped.length) return { absFile, label, result: { exit: 0, note: `qa hook: ${label} (${took}) — ${skipped.join("; ")}` } };
+	return { absFile, label, result: { exit: 0, note: `qa hook: ${label} — lint + --list OK (${took})` } };
 }
 
 async function main() {
@@ -120,7 +154,11 @@ async function main() {
 	}
 	const result = check(input);
 	if (result.stderr) process.stderr.write(`${result.stderr}\n`);
-	if (result.note) process.stdout.write(`${JSON.stringify({ systemMessage: result.note })}\n`);
+	const json = {
+		...(result.note ? { systemMessage: result.note } : {}),
+		...(result.context ? { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: result.context } } : {})
+	};
+	if (Object.keys(json).length) process.stdout.write(`${JSON.stringify(json)}\n`);
 	process.exitCode = result.exit; // not process.exit(): let stdout finish writing on a pipe
 }
 
