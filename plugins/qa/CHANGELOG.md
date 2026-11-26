@@ -2,6 +2,16 @@
 
 All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
 
+## [1.5.2] - 2026-11-25
+
+### Fixed
+
+- **The entry-point check no longer goes silent when `realpath` fails.** `isMain()` (`scripts/is-main.mjs`, a synced copy of `shared/is-main.mjs`) used to return false if resolving a path threw (for example a permission error on a folder in the path), so the hooks and bin tools did nothing. Now it falls back to comparing the plain resolved paths, the check used before the symlink fix. The worst case is the old behaviour (no symlink support), never a silent no-op.
+
+### Changed
+
+- README "Releasing" now points to the root README's "Releasing a plugin" (bump in a PR, merge, then `claude plugin tag --push` from `plugins/qa`). It used to describe the old single-dash `qa-v<version>` tag pushed by hand.
+
 ## [1.5.1] - 2026-11-25
 
 ### Fixed

@@ -2,6 +2,12 @@
 
 All notable changes to the `accessibility` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.2] - 2026-11-25
+
+### Fixed
+
+- **The entry-point check no longer goes silent when `realpath` fails.** `isMain()` (`scripts/is-main.mjs`, a synced copy of `shared/is-main.mjs`) used to return false if resolving a path threw (for example a permission error on a folder in the path), so the scan script and `a11y-contrast` did nothing. Now it falls back to comparing the plain resolved paths, the check used before the symlink fix. The worst case is the old behaviour (no symlink support), never a silent no-op.
+
 ## [0.1.1] - 2026-11-25
 
 ### Fixed

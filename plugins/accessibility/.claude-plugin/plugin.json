@@ -1,6 +1,6 @@
 {
 	"name": "accessibility",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Helps Claude build accessible UI: /a11y (a one-off axe scan with plain-English fixes, using the project's own Playwright), an a11y-reviewer agent for what scanners miss, and a contrast calculator. WCAG 2.2 AA by default.",
 	"author": {
 		"name": "Ben Weese",

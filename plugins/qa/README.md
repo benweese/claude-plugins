@@ -345,7 +345,7 @@ claude plugin validate plugins/qa --strict
 
 After editing, start a new Claude Code session (or run `/reload-plugins` where your client has it) to load the changes.
 
-**Releasing:** bump `version` in both `plugins/qa/.claude-plugin/plugin.json` and the qa entry of the root `.claude-plugin/marketplace.json` (CI fails if they differ), add an entry to [CHANGELOG.md](CHANGELOG.md), push to `main`, then tag the commit `qa-v<version>` and push the tag. Users get it with `claude plugin update qa@benweese` (or `/plugin update` where their client has it), then a new session.
+**Releasing:** see "Releasing a plugin" in the [root README](../../README.md): bump the version in a PR, merge it, then run `claude plugin tag --push` from `plugins/qa`. Users get it with `claude plugin update qa@benweese` (or `/plugin update` where their client has it), then a new session.
 
 Dependabot keeps the GitHub Actions in the workflow current.
 
