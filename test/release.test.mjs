@@ -396,3 +396,20 @@ test("a marketplace.json entry without a version at the tagged commit → error 
 	f.moveMain(c);
 	assert.deepEqual(checkTag("qa--v1.2.0", ctx(runner(f.dir, { tags: { "qa--v1.2.0": signed(c) } }))), { action: "error", tag: "qa--v1.2.0", reason: "marketplace.json entry has no version" });
 });
+
+test("--tag=<value> works like --tag <value>; --tag= with an empty value → '--tag needs a value'", () => {
+	const f = fixture();
+	const tags = { "qa--v1.2.0": signed(f.first), "qa--v1.1.0": { kind: "lightweight", commit: f.first } };
+	const r = runner(f.dir, { tags });
+	const out = [];
+	assert.equal(main(["--dry-run", "--tag=qa--v1.2.0"], { GITHUB_REPOSITORY: REPO }, r, (s) => out.push(s), () => {}), 0);
+	assert.match(out[0], /^would release qa--v1\.2\.0:/);
+	assert.equal(r.calls.git.some((a) => a[0] === "ls-remote"), false, "one tag: no listing");
+	for (const argv of [["--tag="], ["--tag= "], ["--tag=   ", "--dry-run"]]) {
+		const e = runner(f.dir, { tags });
+		const err = [];
+		assert.equal(main(argv, { GITHUB_REPOSITORY: REPO, RELEASE_TAG: "qa--v1.2.0" }, e, () => {}, (s) => err.push(s)), 1, JSON.stringify(argv));
+		assert.deepEqual(err, ["--tag needs a value"], JSON.stringify(argv));
+		assert.equal(e.calls.git.length + e.calls.gh.length, 0, JSON.stringify(argv));
+	}
+});

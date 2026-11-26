@@ -163,12 +163,15 @@ export function publish(runner, r) {
 /** The whole script: returns the exit code. */
 export function main(argv, env = process.env, runner = realRunner(process.cwd()), log = console.log, logError = console.error) {
 	const dry = argv.includes("--dry-run");
+	// --tag <value> or --tag=<value>; undefined = not given (then RELEASE_TAG, then catch-up)
+	const eq = argv.find((a) => a.startsWith("--tag="));
 	const i = argv.indexOf("--tag");
-	if (i !== -1 && (argv[i + 1] === undefined || argv[i + 1].startsWith("--") || !argv[i + 1].trim())) {
+	const given = eq !== undefined ? eq.slice("--tag=".length) : i !== -1 ? (argv[i + 1] === undefined || argv[i + 1].startsWith("--") ? "" : argv[i + 1]) : undefined;
+	if (given !== undefined && !given.trim()) {
 		logError("--tag needs a value"); // never fall back to catch-up (every unreleased tag) by accident
 		return 1;
 	}
-	const one = ((i !== -1 ? argv[i + 1] : env.RELEASE_TAG) || "").trim();
+	const one = (given ?? env.RELEASE_TAG ?? "").trim();
 	try {
 		if (runner.git(["fetch", "--quiet", "origin"]).status !== 0) logError("warning: git fetch failed; origin/main may be stale"); // best effort
 		const repo = env.GITHUB_REPOSITORY || ok(runner.gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]), "finding the repo").trim();
