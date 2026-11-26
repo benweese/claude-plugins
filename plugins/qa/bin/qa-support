@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMain } from "../scripts/is-main.mjs";
 
 const TEMPLATES_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "templates");
 export const BUNDLES = ["core", "ui", "a11y"];
@@ -197,7 +198,7 @@ export function status(root, dirFlag) {
 	return { ok: true, lines: [`${COMMONS} isn't installed. Helper copies in ${info.supportDir}/ (templates: ${m.tag}, ${info.lang}):`, row("core", m), row("ui", m), a11yRow] };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+async function main() {
 	const args = process.argv.slice(2);
 	const flag = (n) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 	const root = process.cwd();
@@ -210,9 +211,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 			: null;
 		if (!r) throw new Error("usage: qa-support status | plan --bundle core,ui,a11y | install --bundle core,ui,a11y | update  [--dir <supportDir>]");
 		console.log(r.lines.join("\n"));
-		process.exit(r.ok ? 0 : 1);
+		process.exitCode = r.ok ? 0 : 1; // not process.exit(): let stdout finish writing on a pipe
+		return;
 	} catch (e) {
 		console.error(e.message);
-		process.exit(2);
+		process.exitCode = 2;
+		return;
 	}
 }
+
+if (isMain(process.argv[1], import.meta.url)) await main();

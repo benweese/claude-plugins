@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { RULES, isMain, principles, readConfig, rulesText } from "../scripts/principles.mjs";
+import { RULES, principles, readConfig, rulesText } from "../scripts/principles.mjs";
+import { isMain } from "../scripts/is-main.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.join(HERE, "..");
@@ -126,9 +127,10 @@ test("run through a symlink to the script → the rules still print", (t) => {
 	assert.equal(r.stdout, `${rulesText()}\n`);
 });
 
-test("isMain(): false for an undefined argv[1] and for a path that doesn't exist; true for the script", () => {
+test("isMain(): false for an undefined argv[1], a missing selfUrl, and a path that doesn't exist; true for the script", () => {
 	const self = pathToFileURL(SCRIPT).href;
 	assert.equal(isMain(undefined, self), false);
+	assert.equal(isMain(SCRIPT, undefined), false);
 	assert.equal(isMain(path.join(tmpdir(), "no-such-dir-workflow", "principles.mjs"), self), false);
 	assert.equal(isMain(SCRIPT, self), true);
 });
@@ -158,4 +160,12 @@ test("hooks.json: SessionStart on startup|resume|clear|compact runs the script t
 	const rel = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"/.exec(hook.command)?.[1];
 	assert.equal(rel, "scripts/principles.mjs");
 	assert.ok(existsSync(path.join(PLUGIN, rel)));
+});
+
+test("entry point: isMain(process.argv[1], import.meta.url) is the last statement; no process.exit()", () => {
+	const code = readFileSync(SCRIPT, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+	assert.ok(!/process\.exit\(/.test(code), "uses process.exit(); set process.exitCode instead");
+	assert.ok(!/process\.argv\[1\]\s*===/.test(code), "compares process.argv[1] directly; use isMain()");
+	assert.match(code, /if \(isMain\(process\.argv\[1\], import\.meta\.url\)\) await main\(\);\s*$/);
+	assert.ok(existsSync(path.join(PLUGIN, "scripts", "is-main.mjs")), "the synced is-main.mjs copy is present");
 });

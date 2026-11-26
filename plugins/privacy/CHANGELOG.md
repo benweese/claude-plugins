@@ -2,6 +2,15 @@
 
 All notable changes to the `privacy` plugin. Versions follow [semantic versioning](https://semver.org/); before 1.0, a minor version can change behaviour.
 
+## [0.1.1] - 2026-11-25
+
+### Fixed
+
+- **The commit hook, `/privacy-scan` and `install-privacy-git-hook` did nothing when run through a symlinked path** (a symlinked file or plugin folder): the "am I the script being run?" check compared `process.argv[1]`, which keeps the symlink, with the resolved `import.meta.url`. They now use `isMain()` from `scripts/is-main.mjs` (a synced copy of `shared/is-main.mjs`), which compares real paths.
+- They, and the plain-git scanner (`git-pre-commit.mjs`), set `process.exitCode` and return instead of calling `process.exit()`, so output can finish writing. Behaviour is unchanged: the commit hook denies with exit 0 + a `permissionDecision: "deny"` JSON; the plain-git scanner blocks with exit 1; `/privacy-scan` exits 0 / 1 / 2. Re-run `install-privacy-git-hook` to pick up the new scanner copy (as after any update).
+- `bin/package.json` (`{"type": "module"}`): the installer loads as an ES module without relying on Node's module syntax detection.
+- Tests: each entry point gives the same result directly, through a symlinked file and through a symlinked folder; a refresh failure prints one line and exits 2; a source check fails on `process.exit()` or a direct `process.argv[1]` comparison.
+
 ## [0.1.0] - 2026-11-21
 
 ### Added

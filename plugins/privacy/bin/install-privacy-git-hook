@@ -10,6 +10,7 @@ import { accessSync, chmodSync, constants, copyFileSync, existsSync, mkdirSync, 
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isMain } from "../scripts/is-main.mjs";
 
 const SCRIPTS = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts");
 const FILES = ["git-pre-commit.mjs", "detectors.mjs", "commit-content.mjs"];
@@ -61,8 +62,10 @@ export function install(cwd, { force = false } = {}) {
 	return { ok: true, message: `Installed: git will run ${path.relative(root, target)} on every commit (scanner in ${path.relative(root, dir)}/). Re-run this after updating the privacy plugin.${cfgNote}` };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+function main() {
 	const r = install(process.cwd(), { force: process.argv.includes("--force") });
 	console.log(r.message);
-	process.exit(r.ok ? 0 : 1);
+	process.exitCode = r.ok ? 0 : 1; // not process.exit(): let stdout finish writing on a pipe
 }
+
+if (isMain(process.argv[1], import.meta.url)) main();

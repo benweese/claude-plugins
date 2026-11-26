@@ -9,8 +9,8 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { decision, defaultBranch, finish, git, gitSub, loadConfig, projectDirOf, readInput, splitCommands, words } from "./lib.mjs";
+import { isMain } from "./is-main.mjs";
 import { commitPlan, contentToCommit } from "./commit-content.mjs";
 
 export { commitPlan, addedLines, contentToCommit } from "./commit-content.mjs";
@@ -165,4 +165,4 @@ export function preBash(input, env = process.env, opts = {}) {
 	return { exit: 0, json: cfg.warning ? note : undefined };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) finish(preBash(await readInput()));
+if (isMain(process.argv[1], import.meta.url)) finish(preBash(await readInput()));

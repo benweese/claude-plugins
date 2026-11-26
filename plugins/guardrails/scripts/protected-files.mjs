@@ -3,8 +3,8 @@
 // blocks touching files like .env*, *.pem, *.key, id_*, credentials* — reading one would put the secret
 // into the conversation. .env.example / .env.sample / .env.template are allowed. Both lists are
 // configurable ("protected", "allow" in .claude/guardrails.json). Shell commands (cat .env) aren't parsed.
-import { fileURLToPath } from "node:url";
 import { decision, finish, loadConfig, matchesAny, projectDirOf, readInput } from "./lib.mjs";
+import { isMain } from "./is-main.mjs";
 
 /** The whole hook, as data. */
 export function protectedFiles(input, env = process.env) {
@@ -21,4 +21,4 @@ export function protectedFiles(input, env = process.env) {
 	};
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) finish(protectedFiles(await readInput()));
+if (isMain(process.argv[1], import.meta.url)) finish(protectedFiles(await readInput()));

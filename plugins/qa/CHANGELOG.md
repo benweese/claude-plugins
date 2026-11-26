@@ -2,6 +2,15 @@
 
 All notable changes to the `qa` plugin (named `playwright-qa-agents` before 1.0.0). Versions follow [semantic versioning](https://semver.org/).
 
+## [1.5.1] - 2026-11-25
+
+### Fixed
+
+- **The hooks and bin tools did nothing when run through a symlinked path** (a symlinked file or plugin folder): the "am I the script being run?" check compared `process.argv[1]`, which keeps the symlink, with the resolved `import.meta.url`. `test-file-check`, `review-guard`, `qa-support`, `qa-requirements` and `qa-components` now use `isMain()` from `scripts/is-main.mjs` (a synced copy of `shared/is-main.mjs`), which compares real paths.
+- They set `process.exitCode` (and return) instead of calling `process.exit()`, so output can finish writing on a pipe. Exit codes are unchanged: `test-file-check` still reports a failing lint or `--list` with exit 2.
+- `bin/package.json` (`{"type": "module"}`): the bin tools load as ES modules without relying on Node's module syntax detection.
+- Tests: each hook and bin tool gives the same result directly, through a symlinked file and through a symlinked folder; the bin tools run with `--no-experimental-detect-module`; a source check fails on `process.exit()` or a direct `process.argv[1]` comparison.
+
 ## [1.5.0] - 2026-11-21
 
 ### Added

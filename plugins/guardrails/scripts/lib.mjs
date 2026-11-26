@@ -64,11 +64,16 @@ export async function readInput() {
 /** The project root: CLAUDE_PROJECT_DIR, else the hook's cwd. */
 export const projectDirOf = (input, env = process.env) => env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
 
-/** Prints a hook result and exits. r: {exit, stderr?, json?}. */
+/**
+ * Prints a hook result and sets the exit code. r: {exit, stderr?, json?}.
+ * It sets process.exitCode instead of calling process.exit(), so stdout can finish writing on a pipe — which
+ * also means it doesn't stop the script. Call it as the entry point's last statement; a test fails if any call
+ * site has code after it.
+ */
 export function finish(r) {
 	if (r.stderr) process.stderr.write(`${r.stderr}\n`);
 	if (r.json) process.stdout.write(`${JSON.stringify(r.json)}\n`);
-	process.exit(r.exit || 0);
+	process.exitCode = r.exit || 0;
 }
 
 /** A PreToolUse decision ("deny" | "ask") with a reason, as hook JSON. */

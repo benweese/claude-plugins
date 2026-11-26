@@ -8,8 +8,9 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { axeTags, formatViolations, loadA11yConfig } from "./lib.mjs";
+import { isMain } from "./is-main.mjs";
 
 /** Imports a package the way the project would (resolved from its package.json), or null. */
 async function projectImport(projectDir, names) {
@@ -64,9 +65,11 @@ export async function scan(projectDir, target, { json = false } = {}) {
 	}
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+async function main() {
 	const args = process.argv.slice(2);
 	const r = await scan(process.env.CLAUDE_PROJECT_DIR || process.cwd(), args.find((a) => !a.startsWith("--")), { json: args.includes("--json") });
 	console.log(r.text);
-	process.exit(r.code);
+	process.exitCode = r.code; // not process.exit(): let stdout finish writing on a pipe
 }
+
+if (isMain(process.argv[1], import.meta.url)) await main();

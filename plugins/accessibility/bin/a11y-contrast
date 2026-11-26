@@ -2,9 +2,8 @@
 // a11y-contrast <foreground> <background> [AA|AAA]
 // Prints the WCAG contrast ratio of two colors (#rgb, #rrggbb or rgb(r, g, b)) and whether it passes for
 // normal text, large text and UI components / graphics. Exit 0 = passes for normal text, 1 = doesn't, 2 = bad input.
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { contrastRatio, contrastVerdict, parseColor } from "../scripts/lib.mjs";
+import { isMain } from "../scripts/is-main.mjs";
 
 export function contrastReport(fg, bg, level = "AA") {
 	const a = parseColor(fg);
@@ -21,13 +20,16 @@ export function contrastReport(fg, bg, level = "AA") {
 	};
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function main() {
 	const [fg, bg, level] = process.argv.slice(2);
 	if (!fg || !bg) {
 		console.log("usage: a11y-contrast <foreground> <background> [AA|AAA]");
-		process.exit(2);
+		process.exitCode = 2; // not process.exit(): let stdout finish writing on a pipe
+		return;
 	}
 	const r = contrastReport(fg, bg, (level || "AA").toUpperCase());
 	console.log(r.text);
-	process.exit(r.code);
+	process.exitCode = r.code;
 }
+
+if (isMain(process.argv[1], import.meta.url)) main();

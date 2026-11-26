@@ -10,7 +10,7 @@
 			"name": "qa",
 			"source": "./plugins/qa",
 			"description": "Plan, generate, run and heal Playwright API and UI tests in TypeScript.",
-			"version": "1.5.0",
+			"version": "1.5.1",
 			"category": "testing"
 		},
 		{
@@ -24,28 +24,28 @@
 			"name": "workflow",
 			"source": "./plugins/workflow",
 			"description": "/board for GitHub Projects (configured per repo), a lint check, and opt-in session rules.",
-			"version": "0.3.0",
+			"version": "0.3.1",
 			"category": "productivity"
 		},
 		{
 			"name": "guardrails",
 			"source": "./plugins/guardrails",
 			"description": "Blocks committing secrets (on by default); opt-in protected files, destructive-command confirm, lint after edit.",
-			"version": "0.1.1",
+			"version": "0.1.2",
 			"category": "security"
 		},
 		{
 			"name": "privacy",
 			"source": "./plugins/privacy",
 			"description": "/privacy-scan, a privacy-reviewer agent and an opt-in commit blocker for personal data.",
-			"version": "0.1.0",
+			"version": "0.1.1",
 			"category": "security"
 		},
 		{
 			"name": "accessibility",
 			"source": "./plugins/accessibility",
 			"description": "Helps Claude build accessible UI: /a11y (axe scan with plain-English fixes), an a11y-reviewer agent and a contrast calculator.",
-			"version": "0.1.0",
+			"version": "0.1.1",
 			"category": "accessibility"
 		}
 	]

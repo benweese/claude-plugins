@@ -1,6 +1,6 @@
 {
 	"name": "qa",
-	"version": "1.5.0",
+	"version": "1.5.1",
 	"description": "Agents and skills that plan, generate, run and heal Playwright API and UI tests in TypeScript, with a human review step between plan and code.",
 	"author": {
 		"name": "Ben Weese",

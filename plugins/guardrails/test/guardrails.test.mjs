@@ -2,7 +2,7 @@
 // secret-looking string sits in this file.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -186,4 +186,89 @@ test("as real hooks: stdin JSON in, decision JSON out", { skip: !unix }, () => {
 	assert.equal(JSON.parse(res.stdout).hookSpecificOutput.permissionDecision, "deny");
 	const clean = run("pre-bash.mjs", bash(r.dir, "ls"));
 	assert.equal(clean.stdout, "");
+});
+
+// Each hook must block the same way when Claude Code runs it through a symlinked path (a symlinked script or a
+// symlinked plugin folder). Before the fix, the entry-point check never matched there and the hook did nothing.
+const SCRIPTS = path.join(HERE, "..", "scripts");
+
+/** Ways to reach a script: directly, through a symlink to the file, through a symlink to the scripts/ folder. */
+function entryPoints(script, t) {
+	const direct = path.join(SCRIPTS, script);
+	const fileLink = path.join(mkdtempSync(path.join(tmpdir(), "guardrails-link-")), script);
+	const dirLink = path.join(mkdtempSync(path.join(tmpdir(), "guardrails-dirlink-")), "scripts");
+	try {
+		symlinkSync(direct, fileLink);
+		symlinkSync(SCRIPTS, dirLink, "dir");
+	} catch (e) {
+		t.skip(`can't create a symlink here (${e.code})`);
+		return null;
+	}
+	return { direct, "symlinked file": fileLink, "symlinked folder": path.join(dirLink, script) };
+}
+
+/** Runs a hook script the way Claude Code does: hook JSON on stdin, CLAUDE_PROJECT_DIR set, no gitleaks on PATH. */
+const runHook = (file, input, dir) =>
+	spawnSync(process.execPath, [file], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: dir, PATH: "/usr/bin:/bin" } });
+
+/** stdout is exactly one JSON line denying the call (exit 0), nothing before or after it. */
+function assertDeniedOnce(res, how, reason) {
+	assert.equal(res.status, 0, `${how}: ${res.stderr}`);
+	const lines = res.stdout.split("\n").filter(Boolean);
+	assert.equal(lines.length, 1, `${how}: exactly one line of output, got ${JSON.stringify(res.stdout)}`);
+	const out = JSON.parse(lines[0]).hookSpecificOutput;
+	assert.equal(out.permissionDecision, "deny", how);
+	assert.match(out.permissionDecisionReason, reason, how);
+}
+
+test("secret blocker: still denies (exit 0 + deny JSON) directly and through symlinks, and nothing runs after", { skip: !unix }, (t) => {
+	const ways = entryPoints("pre-bash.mjs", t);
+	if (!ways) return;
+	// dangerousCommands is on and the line also runs `git reset --hard`: the deny must be the only output (no "ask").
+	const r = repo({ config: { version: 1, dangerousCommands: true } });
+	r.write("config.js", `const token = "${FAKE_GH}";\n`);
+	r.g("add", "config.js");
+	for (const [how, file] of Object.entries(ways)) {
+		assertDeniedOnce(runHook(file, bash(r.dir, "git commit -m x && git reset --hard"), r.dir), how, /guardrails blocked this commit/);
+	}
+});
+
+test("protected files: still denies (exit 0 + deny JSON) directly and through symlinks", { skip: !unix }, (t) => {
+	const ways = entryPoints("protected-files.mjs", t);
+	if (!ways) return;
+	const r = repo({ config: { version: 1, protectedFiles: true } });
+	const input = { cwd: r.dir, tool_name: "Read", tool_input: { file_path: path.join(r.dir, ".env") } };
+	for (const [how, file] of Object.entries(ways)) assertDeniedOnce(runHook(file, input, r.dir), how, /\.env is a protected file/);
+});
+
+test("lint after edit: a lint failure still exits 2 with the report on stderr, directly and through symlinks", { skip: !unix }, (t) => {
+	const ways = entryPoints("lint-after-edit.mjs", t);
+	if (!ways) return;
+	const r = repo({ config: { version: 1, lint: true, lintCommand: "node -e \"console.log('bad style in ' + process.argv[1]); process.exit(1)\" {file}" } });
+	const input = { cwd: r.dir, tool_name: "Edit", tool_input: { file_path: path.join(r.dir, "app.js") } };
+	for (const [how, file] of Object.entries(ways)) {
+		const res = spawnSync(process.execPath, [file], { input: JSON.stringify(input), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir } });
+		assert.equal(res.status, 2, `${how}: ${res.stderr}`);
+		assert.equal(res.stdout, "", how);
+		assert.match(res.stderr, /^guardrails lint: app\.js \(\d+\.\ds\)\nbad style in app\.js\n$/, how);
+	}
+});
+
+test("entry points: symlink-safe isMain(), no process.exit(), and finish() is always the last statement", () => {
+	const files = readdirSync(SCRIPTS).filter((f) => f.endsWith(".mjs"));
+	for (const f of files) {
+		const src = readFileSync(path.join(SCRIPTS, f), "utf8");
+		const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""); // comments may mention them
+		assert.ok(!/process\.exit\(/.test(code), `${f}: uses process.exit(); set process.exitCode instead`);
+		assert.ok(!/process\.argv\[1\]\s*===|===\s*path\.resolve\(process\.argv\[1\]\)/.test(code), `${f}: compares process.argv[1] directly; use isMain()`);
+		const calls = src.split("\n").map((l, i) => ({ l, i })).filter(({ l }) => /\bfinish\(/.test(l) && !/export function finish/.test(l));
+		if (!calls.length) continue;
+		const lines = src.split("\n");
+		const lastCode = lines.map((l, i) => ({ l: l.trim(), i })).filter(({ l }) => l && !l.startsWith("//")).pop();
+		for (const { l, i } of calls) {
+			assert.match(l, /^if \(isMain\(process\.argv\[1\], import\.meta\.url\)\) finish\(\w+\(await readInput\(\)\)\);$/, `${f}:${i + 1}: finish() must be called only from the isMain() entry line`);
+			assert.equal(i, lastCode.i, `${f}:${i + 1}: code after finish() would still run (it sets process.exitCode, it doesn't exit)`);
+		}
+	}
+	assert.ok(files.includes("is-main.mjs"), "the synced is-main.mjs copy is present");
 });

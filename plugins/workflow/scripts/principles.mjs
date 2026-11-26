@@ -5,9 +5,9 @@
 // Present but invalid (unreadable, bad JSON, not an object, wrong version, "principles" not a boolean)
 // → a systemMessage warning shown to the user, nothing added to context.
 // Plain stdout becomes context; a lone JSON object is read as hook output: https://code.claude.com/docs/en/hooks
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { isMain } from "./is-main.mjs";
 
 export const HEADER = "Working rules for this project (workflow plugin, .claude/workflow.json):";
 
@@ -75,18 +75,11 @@ async function readInput() {
 	}
 }
 
-/** True when run as a script, even through a symlinked path (argv[1] isn't resolved; import.meta.url is). */
-export function isMain(argv1 = process.argv[1], selfUrl = import.meta.url) {
-	if (!argv1) return false;
-	try {
-		return realpathSync(argv1) === realpathSync(fileURLToPath(selfUrl));
-	} catch {
-		return false;
-	}
-}
-
-if (isMain()) {
+async function main() {
 	const { stdout } = principles(await readInput());
 	if (stdout) process.stdout.write(`${stdout}\n`);
 	process.exitCode = 0; // no process.exit(): let stdout drain on async pipes
 }
+
+// isMain() comes from scripts/is-main.mjs (a synced copy of shared/is-main.mjs): symlink-safe.
+if (isMain(process.argv[1], import.meta.url)) await main();

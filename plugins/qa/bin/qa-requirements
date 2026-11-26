@@ -8,8 +8,8 @@
 // Warns on every run if .claude/qa/requirements.md isn't gitignored.
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { currentBranch, ignoreWarning, issueText, readRequirements, readState, saveRequirements, testFilesHash, writeState } from "../scripts/requirements.mjs";
+import { isMain } from "../scripts/is-main.mjs";
 
 export function run(root, args, stdinText = "") {
 	const out = [];
@@ -46,7 +46,7 @@ export function run(root, args, stdinText = "") {
 	return out.join("\n");
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+async function main() {
 	const args = process.argv.slice(2);
 	let stdin = "";
 	if (args[0] === "save" && args[1] === "chat") for await (const c of process.stdin) stdin += c;
@@ -54,6 +54,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 		console.log(run(process.cwd(), args, stdin));
 	} catch (e) {
 		console.error(e.message);
-		process.exit(2);
+		process.exitCode = 2; // not process.exit(): let output finish writing on a pipe
+		return;
 	}
 }
+
+if (isMain(process.argv[1], import.meta.url)) await main();

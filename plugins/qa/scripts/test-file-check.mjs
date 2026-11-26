@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { isMain } from "./is-main.mjs";
 
 export const TEST_FILE = /\.(spec|test)\.(ts|js|mjs|cjs)$/;
 export const CONFIG_NAMES = ["playwright.config.ts", "playwright.config.js", "playwright.config.mjs", "playwright.config.cjs"];
@@ -116,12 +116,12 @@ async function main() {
 	try {
 		input = JSON.parse(raw || "{}");
 	} catch {
-		process.exit(0); // not hook input: nothing to do
+		return; // not hook input: nothing to do
 	}
 	const result = check(input);
 	if (result.stderr) process.stderr.write(`${result.stderr}\n`);
 	if (result.note) process.stdout.write(`${JSON.stringify({ systemMessage: result.note })}\n`);
-	process.exit(result.exit);
+	process.exitCode = result.exit; // not process.exit(): let stdout finish writing on a pipe
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+if (isMain(process.argv[1], import.meta.url)) await main();
