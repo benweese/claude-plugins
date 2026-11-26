@@ -69,6 +69,32 @@ export function git(cwd, args) {
 	return r.status === 0 ? r.stdout : "";
 }
 
+// ---- scan budget -------------------------------------------------------------------------------------------------
+// A hook that times out lets the commit through on Claude Code versions without `onFailure: "block"`, so the content
+// scan has a budget of its own, sized well inside the hook's timeout. A git call that runs out of time throws
+// ScanTimeout; callers turn that into "ask", never a silent pass.
+
+/** Thrown when a content-scan call runs out of time. */
+export class ScanTimeout extends Error {}
+
+/**
+ * A time budget for one hook run: {deadline, now, runGit, left()}. runGit / now are for tests (the git runner, same
+ * shape as runGitDefault, and the clock).
+ */
+export function scanBudget(ms, { now = Date.now, runGit = runGitDefault } = {}) {
+	const deadline = now() + ms;
+	return { deadline, now, runGit, left: () => deadline - now() };
+}
+
+/** git within the budget: stdout ("" when git fails); throws ScanTimeout when the budget is spent or the call times out. */
+export function scanGit(budget, cwd, args) {
+	const left = budget.left();
+	if (left <= 0) throw new ScanTimeout(`no time left for git ${args[0]}`);
+	const r = budget.runGit(args, { cwd, timeout: left });
+	if (r.timedOut) throw new ScanTimeout(`git ${args[0]} timed out`);
+	return r.status === 0 ? r.stdout : "";
+}
+
 /** Added lines per file from a unified diff (-U0): [{file, lines: [{n, text}]}]. */
 export function addedLines(diff) {
 	const files = [];
@@ -91,19 +117,25 @@ export function addedLines(diff) {
 	return files;
 }
 
-/** Everything the commit will contain, as [{file, lines:[{n,text}]}]. */
-export function contentToCommit(repo, plan) {
-	const chunks = addedLines(git(repo, ["diff", "--cached", "-U0", "--no-color"]));
+/**
+ * Everything the commit will contain, as [{file, lines:[{n,text}]}].
+ * @param {object} [budget] from scanBudget(); without one, git calls have no timeout. With one, throws ScanTimeout
+ *   when a git call times out or the budget runs out (checked before each git call and each untracked file).
+ */
+export function contentToCommit(repo, plan, budget) {
+	const run = budget ? (cwd, args) => scanGit(budget, cwd, args) : git;
+	const chunks = addedLines(run(repo, ["diff", "--cached", "-U0", "--no-color"]));
 	const tracked = plan.all || plan.addAll || plan.addTracked ? [] : plan.addPaths;
 	if (plan.all || plan.addAll || plan.addTracked || plan.addPaths.length) {
 		const args = ["diff", "-U0", "--no-color"];
 		if (!(plan.all || plan.addAll || plan.addTracked)) args.push("--", ...tracked);
-		chunks.push(...addedLines(git(repo, args)));
+		chunks.push(...addedLines(run(repo, args)));
 	}
 	if (plan.addAll || plan.addPaths.length) {
 		const args = ["ls-files", "--others", "--exclude-standard"];
 		if (!plan.addAll) args.push("--", ...plan.addPaths);
-		for (const f of git(repo, args).split("\n").filter(Boolean)) {
+		for (const f of run(repo, args).split("\n").filter(Boolean)) {
+			if (budget && budget.left() <= 0) throw new ScanTimeout("no time left to read untracked files");
 			const abs = path.join(repo, f);
 			try {
 				if (statSync(abs).size > 1_000_000) continue;
@@ -598,9 +630,10 @@ const ALIAS_BUDGET_MS = 5000;
 const ALIAS_DEPTH = 5;
 const commandCache = new WeakMap(); // runner → Map(PATH → Set of real commands)
 
-/** The real git runner: {status, stdout, timedOut}. Tests pass their own with the same shape. */
+/** The real git runner: {status, stdout, timedOut}. Tests pass their own with the same shape. SIGKILL on timeout, so
+ *  a git that ignores SIGTERM can't hold the hook. */
 export function runGitDefault(args, { cwd, env, timeout }) {
-	const r = spawnSync("git", args, { cwd, env, encoding: "utf8", timeout });
+	const r = spawnSync("git", args, { cwd, env, encoding: "utf8", timeout, killSignal: "SIGKILL" });
 	return { status: r.status, stdout: r.stdout || "", timedOut: r.error?.code === "ETIMEDOUT" };
 }
 
