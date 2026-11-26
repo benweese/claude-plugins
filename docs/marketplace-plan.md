@@ -6,12 +6,12 @@ What the `benweese` marketplace will hold, how each plugin is configured per pro
 
 | Plugin | Status | Contents |
 | ------ | ------ | -------- |
-| `qa` | 1.5.1 | Works with or without playwright-test-commons (copies its helpers when it's missing). Agents: page-mapper, api/ui test planners and generators, ui-test-healer, test-reviewer, a11y-tester, component-tester. Skills: author-tests, run-spec, bug-report, review-tests, playwright-cli. Hooks (opt-in): lint + `playwright test --list` after test-file edits; auto-review after a green run. Tools: qa-support (helper copies, incl. the `a11y` bundle), qa-requirements, qa-components |
+| `qa` | 1.5.2 | Works with or without playwright-test-commons (copies its helpers when it's missing). Agents: page-mapper, api/ui test planners and generators, ui-test-healer, test-reviewer, a11y-tester, component-tester. Skills: author-tests, run-spec, bug-report, review-tests, playwright-cli. Hooks (opt-in): lint + `playwright test --list` after test-file edits; auto-review after a green run. Tools: qa-support (helper copies, incl. the `a11y` bundle), qa-requirements, qa-components |
 | `docs` | 0.2.0 | `/docs sweep` and `/docs phase N` (`update-docs` kept as a deprecated alias until 0.3.0) |
-| `workflow` | 0.3.1 | `/board` (config-driven, read-only until go) and check. Hook (opt-in): session rules at SessionStart. Planned: `/release` |
-| `accessibility` | 0.1.1 | Helps Claude **build** accessible UI: `/a11y` (one-off axe scan with the project's own Playwright, plain-English fixes), a11y-reviewer agent, `a11y-contrast`. Testing lives in `qa` |
-| `privacy` | 0.1.2 | `/privacy-scan`, privacy-reviewer agent, opt-in commit blocker, plain-git hook installer |
-| `guardrails` | 0.1.3 | Secret blocker before `git commit` (on by default); opt-in protected files, dangerous-command confirm, lint after edit |
+| `workflow` | 0.3.2 | `/board` (config-driven, read-only until go) and check. Hook (opt-in): session rules at SessionStart. Planned: `/release` |
+| `accessibility` | 0.1.2 | Helps Claude **build** accessible UI: `/a11y` (one-off axe scan with the project's own Playwright, plain-English fixes), a11y-reviewer agent, `a11y-contrast`. Testing lives in `qa` |
+| `privacy` | 0.1.3 | `/privacy-scan`, privacy-reviewer agent, opt-in commit blocker, plain-git hook installer |
+| `guardrails` | 0.1.4 | Secret blocker before `git commit` (on by default); opt-in protected files, dangerous-command confirm, lint after edit |
 
 Every plugin folder has `.claude-plugin/plugin.json`, `README.md` and `CHANGELOG.md`, with `agents/`, `skills/` and `hooks/` as needed. Slash commands are skills (the docs recommend `skills/` over `commands/` for new plugins).
 

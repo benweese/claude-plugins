@@ -1,6 +1,6 @@
 {
 	"name": "guardrails",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"description": "Safety hooks for Claude Code: blocks committing secrets (on by default); opt-in protected files, a confirm step for destructive commands, and lint after edit.",
 	"author": {
 		"name": "Ben Weese",
