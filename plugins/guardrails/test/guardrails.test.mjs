@@ -8,7 +8,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadConfig, splitCommands } from "../scripts/lib.mjs";
-import { ASK_SPLIT, ASK_UNRESOLVED, capFragment, commitPlans, dangerReasons, preBash, secretCheck } from "../scripts/pre-bash.mjs";
+import { ASK_SPLIT, ASK_TIMEOUT, ASK_UNRESOLVED, capFragment, commitPlans, dangerReasons, preBash, SCAN_BUDGET_MS, secretCheck } from "../scripts/pre-bash.mjs";
+import { runGitDefault } from "../scripts/commit-content.mjs";
 import { protectedFiles } from "../scripts/protected-files.mjs";
 import { lintAfterEdit } from "../scripts/lint-after-edit.mjs";
 
@@ -556,4 +557,99 @@ test("as a real hook: outer prefixes reach bash -c; export / unset carry over; a
 	assert.equal(run(`( export GIT_CONFIG_GLOBAL=${cfg} ); git ci -m x`), undefined, "the subshell's export ended");
 	assert.equal(run("git x commit -m y")?.permissionDecisionReason, ASK, "a shell alias that runs git");
 	assert.equal(run("git hi"), undefined, "a shell alias without git");
+});
+
+// ---- #36: a hung scan asks instead of failing open ----
+/** A runner that "spends" `ms` of the fake clock on each matching git call, then runs real git. */
+function slowGit(match, ms) {
+	const clock = { t: 0 };
+	const runGit = (args, o) => {
+		if (match(args)) clock.t += ms;
+		return runGitDefault(args, o);
+	};
+	return { now: () => clock.t, runGit };
+}
+/** A folder with one fake executable `name` that runs `body` (sh). */
+function fakeBin(name, body) {
+	const bin = mkdtempSync(path.join(tmpdir(), `slow-${name}-`));
+	writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`);
+	chmodSync(path.join(bin, name), 0o755);
+	return bin;
+}
+function withPath(bin, fn) {
+	const old = process.env.PATH;
+	process.env.PATH = `${bin}${path.delimiter}${old}`;
+	try {
+		return fn();
+	} finally {
+		process.env.PATH = old;
+	}
+}
+const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+
+test("timeout: a git call that times out → ask with the timeout reason, never a pass", () => {
+	const r = secretRepo();
+	const runGit = (args, o) => (args[0] === "diff" ? { status: null, stdout: "", timedOut: true } : runGitDefault(args, o));
+	const res = check("git commit -am x", r.dir, { runGit });
+	assert.equal(res?.decision, "ask");
+	assert.equal(res.reason, `guardrails: ${ASK_TIMEOUT}.`);
+});
+
+test("timeout: a spent budget asks without running git; the default budget is 40 s, inside the 60 s hook timeout", () => {
+	const r = secretRepo();
+	const calls = [];
+	const runGit = (args, o) => (calls.push(args.join(" ")), runGitDefault(args, o));
+	assert.equal(check("git commit -am x", r.dir, { runGit, budgetMs: 0 })?.reason, `guardrails: ${ASK_TIMEOUT}.`);
+	assert.ok(!calls.some((c) => c.startsWith("diff")), "no diff once the budget is spent");
+	assert.equal(SCAN_BUDGET_MS, 40_000);
+	const hooks = JSON.parse(readFileSync(path.join(HERE, "..", "hooks", "hooks.json"), "utf8"));
+	assert.equal(hooks.hooks.PreToolUse[0].hooks[0].timeout * 1000 - SCAN_BUDGET_MS >= 15_000, true, "budget well inside the hook timeout");
+});
+
+test("timeout: a deny stays a deny when another commit in the line times out; a clean commit is still silent", () => {
+	const here = secretRepo();
+	const other = repo();
+	const runGit = (args, o) => (o.cwd === other.dir && args[0] === "diff" ? { status: null, stdout: "", timedOut: true } : runGitDefault(args, o));
+	const res = check(`git commit -am x && cd ${other.dir} && git commit -am y`, here.dir, { runGit });
+	assert.equal(res?.decision, "deny");
+	assert.match(res.reason, /app\.js:2\s+GitHub token/);
+	assert.equal(check("git commit -am x", repo().dir, { runGit: runGitDefault }), null);
+});
+
+test("timeout: gitleaks without time left → built-in patterns if they still fit, else ask", () => {
+	const r = secretRepo();
+	// The two diffs take 36 s of the 40 s budget: 4 s left, under the 5 s kept for the built-in patterns.
+	const tight = slowGit((a) => a[0] === "diff", 18_000);
+	const res = check("git commit -am x", r.dir, { ...tight, gitleaks: true });
+	assert.equal(res?.decision, "deny");
+	assert.match(res.reason, /checked with built-in patterns \(gitleaks timed out\)/);
+	// The diffs take the whole budget: nothing is checked → ask (not a pass, not left to the hook timeout).
+	const spent = slowGit((a) => a[0] === "diff" && !a.includes("--cached"), 40_000);
+	assert.equal(check("git commit -am x", r.dir, { ...spent, gitleaks: true })?.reason, `guardrails: ${ASK_TIMEOUT}.`);
+});
+
+test("timeout (real process): a git that hangs on diff → ask within the budget", { skip: !unix || !realGit }, () => {
+	const r = secretRepo();
+	const bin = fakeBin("git", `if [ "$1" = diff ]; then exec sleep 30; fi\nexec "${realGit}" "$@"`);
+	const start = Date.now();
+	const res = withPath(bin, () => check("git commit -am x", r.dir, { budgetMs: 1_500 }));
+	assert.equal(res?.reason, `guardrails: ${ASK_TIMEOUT}.`);
+	assert.ok(Date.now() - start < 10_000, `took ${Date.now() - start} ms`);
+});
+
+test("timeout (real process): a gitleaks that hangs → the built-in patterns still deny", { skip: !unix }, () => {
+	const r = secretRepo();
+	const bin = fakeBin("gitleaks", `if [ "$1" = version ]; then exit 0; fi\nexec sleep 30`);
+	const start = Date.now();
+	const res = withPath(bin, () => secretCheck("git commit -am x", r.dir, { budgetMs: 2_000 }));
+	assert.equal(res?.decision, "deny");
+	assert.match(res.reason, /checked with built-in patterns \(gitleaks timed out\)/);
+	assert.ok(Date.now() - start < 10_000, `took ${Date.now() - start} ms`);
+});
+
+test("hooks.json: the pre-bash hook blocks the command when it fails or times out (onFailure: block)", () => {
+	const hooks = JSON.parse(readFileSync(path.join(HERE, "..", "hooks", "hooks.json"), "utf8")).hooks;
+	const preBashHooks = hooks.PreToolUse.flatMap((m) => m.hooks).filter((h) => h.command.includes("pre-bash.mjs"));
+	assert.equal(preBashHooks.length, 1);
+	assert.equal(preBashHooks[0].onFailure, "block");
 });

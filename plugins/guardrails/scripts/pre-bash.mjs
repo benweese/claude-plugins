@@ -5,6 +5,7 @@
 //    (following cd, pushd, env -C, sudo -D, git -C and wrappers like env / command / sudo), with gitleaks if
 //    installed, else built-in patterns. A match → deny (the commit doesn't run), secrets masked. If the repo
 //    can't be determined (cd "$X", cd -, popd, a missing folder …) or an env -S string mentions git → "ask".
+//    The scan has a 40 s budget (the hook's timeout is 60 s): a git or gitleaks call that runs out of time → "ask".
 //  - dangerous (opt-in): force-push to the default branch, reset --hard, clean -fd, checkout -- ., restore .,
 //    rm -rf on / ~ $HOME or the repo root → "ask" (the normal permission prompt, with the reason).
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,7 +14,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { decision, defaultBranch, finish, git, loadConfig, projectDirOf, readInput } from "./lib.mjs";
 import { isMain } from "./is-main.mjs";
-import { capFragment, commitPlans, contentToCommit, parseGit, resolveDir, trackCommands } from "./commit-content.mjs";
+import { capFragment, commitPlans, contentToCommit, parseGit, resolveDir, ScanTimeout, scanBudget, trackCommands } from "./commit-content.mjs";
 
 export { capFragment, commitPlans, addedLines, contentToCommit } from "./commit-content.mjs";
 
@@ -22,6 +23,14 @@ export const ASK_UNRESOLVED = "can't tell which repo this commits in; secrets no
 export const ASK_SPLIT = "can't parse env -S; secrets not checked";
 export const ASK_UNPARSED = "can't parse this commit; secrets not checked";
 export const ASK_XARGS = "can't see xargs arguments; secrets not checked";
+export const ASK_TIMEOUT = "secret scan timed out; secrets not checked";
+
+/** The secret scan's time budget per hook run, well inside the hook's 60 s timeout (hooks/hooks.json). */
+export const SCAN_BUDGET_MS = 40_000;
+/** Longest `gitleaks version` may take. */
+const GITLEAKS_VERSION_MS = 5_000;
+/** Time kept back from gitleaks so the built-in patterns can still run if it times out. */
+const reserveFor = (budgetMs) => Math.min(5_000, Math.floor(budgetMs / 4));
 
 /** Built-in secret patterns (used when gitleaks isn't installed). */
 export const SECRET_PATTERNS = [
@@ -51,17 +60,20 @@ export function scanBuiltIn(chunks) {
 	return hits;
 }
 
-/** gitleaks on PATH? */
-function hasGitleaks() {
-	return spawnSync("gitleaks", ["version"], { encoding: "utf8" }).status === 0;
+/** gitleaks on PATH? "yes" | "no" | "timeout" (no time left, or `gitleaks version` didn't answer in time). */
+function hasGitleaks(timeout) {
+	if (timeout <= 0) return "timeout";
+	const r = spawnSync("gitleaks", ["version"], { encoding: "utf8", timeout, killSignal: "SIGKILL" });
+	if (r.error?.code === "ETIMEDOUT") return "timeout";
+	return r.status === 0 ? "yes" : "no";
 }
 
 /**
  * gitleaks scan of the chunks. Each file's added lines are written to a temp file (one folder per repo), and every
- * finding's StartLine — a line in that temp file — is mapped back to the real line number. Returns hits, or null if
- * gitleaks failed.
+ * finding's StartLine — a line in that temp file — is mapped back to the real line number. Returns hits, null if
+ * gitleaks failed, or "timeout" if it didn't finish within `timeout` ms (or there was no time to start it).
  */
-function scanGitleaks(chunks) {
+function scanGitleaks(chunks, timeout) {
 	const dir = mkdtempSync(path.join(tmpdir(), "guardrails-"));
 	try {
 		const src = path.join(dir, "src");
@@ -75,12 +87,14 @@ function scanGitleaks(chunks) {
 			files.get(temp).lines.push(...c.lines);
 		}
 		if (!files.size) return [];
+		if (timeout <= 0) return "timeout";
 		for (const [temp, f] of files) {
 			mkdirSync(path.dirname(temp), { recursive: true });
 			writeFileSync(temp, f.lines.map((l) => l.text).join("\n"));
 		}
 		const report = path.join(dir, "report.json");
-		const r = spawnSync("gitleaks", ["dir", src, "--no-banner", "--redact", "--report-format", "json", "--report-path", report, "--exit-code", "3"], { encoding: "utf8" });
+		const r = spawnSync("gitleaks", ["dir", src, "--no-banner", "--redact", "--report-format", "json", "--report-path", report, "--exit-code", "3"], { encoding: "utf8", timeout, killSignal: "SIGKILL" });
+		if (r.error?.code === "ETIMEDOUT") return "timeout";
 		if (r.status !== 0 && r.status !== 3) return null;
 		const found = existsSync(report) ? JSON.parse(readFileSync(report, "utf8") || "[]") : [];
 		return found.map((x) => {
@@ -97,27 +111,51 @@ function scanGitleaks(chunks) {
  * Secret check for a command line: every commit in it, scanned in the repo it runs in.
  * @param {string} line
  * @param {string} cwd where the command starts
- * @param {{gitleaks?: boolean, home?: string, env?: object}} [opts] env supplies CLAUDE_PROJECT_DIR for `cd $CLAUDE_PROJECT_DIR`
+ * @param {{gitleaks?: boolean, home?: string, env?: object, budgetMs?: number, now?: () => number, runGit?: Function}} [opts]
+ *   env supplies CLAUDE_PROJECT_DIR for `cd $CLAUDE_PROJECT_DIR`; budgetMs (default SCAN_BUDGET_MS), now and runGit
+ *   are for tests (the scan budget, the clock, and the git runner for the scan and the alias lookups)
  * @return {null | {decision: "deny" | "ask", reason: string}} deny = a secret would be committed (wins over ask);
- *   ask = a commit's repo can't be determined, or an env -S string mentions git (never a guess at the repo)
+ *   ask = a commit's repo can't be determined, an env -S string mentions git (never a guess at the repo), or the scan
+ *   ran out of time
  */
 export function secretCheck(line, cwd, opts = {}) {
-	const plans = commitPlans(line, { cwd, home: opts.home, env: opts.env });
+	const budgetMs = opts.budgetMs ?? SCAN_BUDGET_MS;
+	const budget = scanBudget(budgetMs, { now: opts.now, runGit: opts.runGit });
+	const plans = commitPlans(line, { cwd, home: opts.home, env: opts.env, now: opts.now, runGit: opts.runGit });
 	const asks = [];
 	const chunks = [];
 	for (const p of plans) {
 		if (p.unparsable) asks.push(p.unparsable === "env -S" ? ASK_SPLIT : p.unparsable === "xargs" ? ASK_XARGS : ASK_UNPARSED);
 		else if (p.dir === null) asks.push(`${ASK_UNRESOLVED} (${capFragment(p.unresolved)})`);
-		else for (const c of contentToCommit(p.dir, p)) chunks.push({ ...c, repo: p.dir });
+		else {
+			try {
+				for (const c of contentToCommit(p.dir, p, budget)) chunks.push({ ...c, repo: p.dir });
+			} catch (e) {
+				if (!(e instanceof ScanTimeout)) throw e;
+				asks.push(ASK_TIMEOUT);
+			}
+		}
 	}
 	if (chunks.length) {
 		let hits = null;
 		let how = "built-in patterns";
-		if (opts.gitleaks ?? hasGitleaks()) {
-			hits = scanGitleaks(chunks);
-			how = hits === null ? "built-in patterns (gitleaks failed to run)" : "gitleaks";
+		const reserve = reserveFor(budgetMs);
+		const gitleaks = opts.gitleaks === undefined ? hasGitleaks(Math.min(GITLEAKS_VERSION_MS, budget.left() - reserve)) : opts.gitleaks ? "yes" : "no";
+		if (gitleaks === "timeout") how = "built-in patterns (gitleaks timed out)";
+		if (gitleaks === "yes") {
+			const r = scanGitleaks(chunks, budget.left() - reserve);
+			if (r === "timeout") how = "built-in patterns (gitleaks timed out)";
+			else if (r === null) how = "built-in patterns (gitleaks failed to run)";
+			else {
+				hits = r;
+				how = "gitleaks";
+			}
 		}
-		if (hits === null) hits = scanBuiltIn(chunks);
+		if (hits === null) {
+			// The built-in patterns run only if there's time left; otherwise this commit isn't checked → ask.
+			if (budget.left() <= 0) return { decision: "ask", reason: `guardrails: ${[...new Set([...asks, ASK_TIMEOUT])].join("; ")}.` };
+			hits = scanBuiltIn(chunks);
+		}
 		if (hits.length) {
 			const where = (h) => (h.repo && path.resolve(h.repo) !== path.resolve(cwd) ? `${path.relative(cwd, h.repo) || "."}: ` : "");
 			const list = hits.slice(0, 20).map((h) => `  ${where(h)}${h.file}:${h.line}  ${h.rule}  ${h.sample}`).join("\n");
