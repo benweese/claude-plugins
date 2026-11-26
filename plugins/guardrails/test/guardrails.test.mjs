@@ -430,3 +430,25 @@ test("ask reason: a long command fragment is cut to about 60 characters with …
 	assert.equal(capFragment("short (why)"), "short (why)");
 	assert.equal(capFragment("x".repeat(61)), `${"x".repeat(59)}…`);
 });
+
+test("as a real hook: commits behind runners and keywords are denied; an unparsable commit asks", { skip: !unix }, () => {
+	const r = repo();
+	r.write("config.js", `const token = "${FAKE_GH}";\n`); // built at run time
+	r.g("add", "config.js");
+	const run = (command) => {
+		const res = spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, command)), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir, PATH: "/usr/bin:/bin" } });
+		assert.equal(res.status, 0, `${command}: ${res.stderr}`);
+		return JSON.parse(res.stdout).hookSpecificOutput;
+	};
+	for (const command of ["if true; then git commit -m x; fi", "! git commit -m x", "nohup git commit -m x", "timeout 5 git commit -m x", "nohup sudo env git commit -m x", "time nice -n 5 git commit -m x"]) {
+		const out = run(command);
+		assert.equal(out.permissionDecision, "deny", command);
+		assert.match(out.permissionDecisionReason, /config\.js:1\s+GitHub token/, command);
+	}
+	for (const command of ["xargs git commit", "bash -c 'git commit -m x'", "eval git commit -m x"]) {
+		const out = run(command);
+		assert.equal(out.permissionDecision, "ask", command);
+		assert.equal(out.permissionDecisionReason, "guardrails: can't parse this commit; secrets not checked. Run it anyway?", command);
+	}
+	assert.equal(spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, 'echo "git commit"')), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir } }).stdout, "", "a quoted mention isn't a commit");
+});

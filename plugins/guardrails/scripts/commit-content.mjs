@@ -240,6 +240,25 @@ const GIT_REPO_VARS = ["GIT_DIR", "GIT_WORK_TREE"];
  *  also change the directory; env -S / --split-string holds a whole command line. */
 const SUDO_VALUE = { short: "ughCDRTpUrt", long: ["--user", "--group", "--host", "--close-from", "--chdir", "--chroot", "--command-timeout", "--prompt", "--other-user", "--role", "--type"] };
 const ENV_VALUE = { short: "uCSa", long: ["--unset", "--chdir", "--split-string", "--argv0"] };
+/** Shell keywords and "!" that can start a segment before the real command (`if git commit …; then`, `! git commit`). */
+const KEYWORDS = new Set(["!", "if", "then", "else", "elif", "do", "while", "until", "{"]);
+/** Commands that run the rest of the line as a command: their options (getopt rules: value-taking letters and long
+ *  names), and how many positional words they take before the command (timeout DURATION, taskset MASK/LIST). chrt's
+ *  priority is optional and only skipped when numeric. */
+const RUNNERS = {
+	time: { short: "fo", long: ["--format", "--output"], positional: 0 },
+	nohup: { short: "", long: [], positional: 0 },
+	setsid: { short: "", long: [], positional: 0 },
+	exec: { short: "a", long: [], positional: 0 },
+	timeout: { short: "sk", long: ["--signal", "--kill-after"], positional: 1 },
+	nice: { short: "n", long: ["--adjustment"], positional: 0 },
+	ionice: { short: "cnp", long: ["--class", "--classdata", "--pid", "--pgid", "--uid"], positional: 0 },
+	stdbuf: { short: "ioe", long: ["--input", "--output", "--error"], positional: 0 },
+	chrt: { short: "TPD", long: ["--sched-runtime", "--sched-period", "--sched-deadline"], positional: 0, numeric: true },
+	taskset: { short: "", long: [], positional: 1 }
+};
+/** Shells whose `-c '<string>'` runs a command line the hooks don't parse (yet). */
+const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 
 /** A command word without a leading "\" or a path: "\git" → "git", "/usr/bin/git" → "git". */
 const commandName = (w) => {
@@ -273,8 +292,10 @@ function readOption(w, i, { short, long }) {
 }
 
 /**
- * The command a segment really runs, with wrappers removed, in any order and nested: leading VAR=value words,
- * `env` (its options and VAR=value words), `command`, `sudo` (its options, including ones that take a value),
+ * The command a segment really runs, with wrappers removed, in any order and nested: leading VAR=value words;
+ * shell keywords and "!" (if, then, else, elif, do, while, until, "{"); `env` (its options and VAR=value words),
+ * `command`, `sudo` (its options, including ones that take a value), `time`, `nohup`, `setsid`, `exec`, `timeout`
+ * (and its DURATION), `nice`, `ionice`, `stdbuf`, `chrt` (and its priority), `taskset` (and its mask or list);
  * then a leading "\" or a path on the command word (/usr/bin/git → git).
  * @param {string | string[]} seg a simple command, or its words
  * @return {{words: string[], chdirs: string[], split: ?string, gitRepoVar: ?string}} words[0] is the command name
@@ -292,7 +313,26 @@ export function normalizeCommand(seg) {
 	let i = 0;
 	for (;;) {
 		while (i < w.length && ASSIGN.test(w[i])) assign(w[i++]);
+		if (KEYWORDS.has(w[i])) {
+			i++;
+			continue;
+		}
 		const name = commandName(w[i]);
+		const runner = Object.hasOwn(RUNNERS, name) ? RUNNERS[name] : null;
+		if (runner) {
+			i++;
+			while (i < w.length && w[i].startsWith("-") && w[i] !== "-") {
+				if (w[i] === "--") {
+					i++;
+					break;
+				}
+				if (name === "nice" && /^-\d+$/.test(w[i])) i++; // nice -5 (old form)
+				else i = readOption(w, i, runner).next;
+			}
+			i += runner.positional;
+			if (runner.numeric && /^\d+$/.test(w[i] ?? "")) i++;
+			continue;
+		}
 		if (name === "env") {
 			i++;
 			while (i < w.length) {
@@ -502,11 +542,40 @@ export function parseGit(nwords) {
 	return nwords[i] ? { sub: nwords[i], args: nwords.slice(i + 1), chdirs, other } : null;
 }
 
+/** Do the words hold `git` (by command name) and, later, `commit`, as separate words? */
+export function mentionsCommit(ws) {
+	const g = ws.findIndex((x) => commandName(x) === "git");
+	return g !== -1 && ws.indexOf("commit", g + 1) !== -1;
+}
+
+/** The '<string>' of `bash -c '<string>'` (also -lc, -ec …: any short cluster with c), or null. */
+function shellCommandString(ws) {
+	let c = false;
+	for (let i = 1; i < ws.length; i++) {
+		const a = ws[i];
+		if (a === "-o" || a === "+o") i++; // set -o OPTION
+		else if (/^[-+][A-Za-z]+$/.test(a)) c ||= a.slice(1).includes("c");
+		else if (a === "--") continue;
+		else return c ? a : null;
+	}
+	return null;
+}
+
+/** An unresolved reason "<command fragment> (<why>)" with the fragment cut to about `max` characters ("…" when cut). */
+export function capFragment(reason, max = 60) {
+	const i = reason.endsWith(")") ? reason.lastIndexOf(" (") : -1;
+	const fragment = i > 0 ? reason.slice(0, i) : reason;
+	const why = i > 0 ? reason.slice(i) : "";
+	return (fragment.length > max ? `${fragment.slice(0, max - 1)}…` : fragment) + why;
+}
+
 /**
  * Every commit a command line makes, with the repo directory it runs in:
  *   [{dir, unresolved, all, addAll, addTracked, addPaths}] — dir null when it can't be determined (unresolved says
  *   why; callers must ask, never scan another directory), plus {unparsable: "env -S"} for an `env -S` string that
- *   mentions git. A `git add` counts only toward a later commit in the same directory.
+ *   mentions git and {unparsable: "commit"} for a command that isn't recognised as git but mentions `git … commit`
+ *   as plain words, or a `bash|sh|zsh|dash|ksh -c` string that does. A `git add` counts only toward a later commit in
+ *   the same directory.
  * @param {string} line
  * @param {{cwd: string, home?: string, env?: object}} opts cwd = where the line starts
  */
@@ -521,7 +590,14 @@ export function commitPlans(line, opts) {
 			continue;
 		}
 		const g = parseGit(s.words);
-		if (!g) continue;
+		if (!g) {
+			// Fail safe: not a git command we recognise, but `git … commit` is in it as plain words (xargs git commit,
+			// eval git commit …), or a shell -c string runs one. Quoted strings are single words, so echo "git commit"
+			// doesn't count.
+			const shellString = SHELLS.has(s.words[0]) ? shellCommandString(s.words) : null;
+			if (mentionsCommit(s.words) || (shellString !== null && mentionsCommit(shellWords(shellString)))) plans.push({ unparsable: "commit" });
+			continue;
+		}
 		let dir = s.dir;
 		let why = s.why;
 		for (const c of g.chdirs) {

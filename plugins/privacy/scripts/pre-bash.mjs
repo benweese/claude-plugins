@@ -6,21 +6,16 @@
 // string mentions git → "ask". No network: a URL denylist is read from its local cache (`/privacy-scan refresh`).
 // Hook format: https://code.claude.com/docs/en/hooks
 import path from "node:path";
-import { commitPlans, contentToCommit } from "./commit-content.mjs";
+import { capFragment, commitPlans, contentToCommit } from "./commit-content.mjs";
+
+export { capFragment } from "./commit-content.mjs";
 import { formatFindings, loadDenylist, loadPrivacyConfig, scanChunks } from "./detectors.mjs";
 import { isMain } from "./is-main.mjs";
 
 /** Why the commit hook asks instead of scanning. */
 export const ASK_UNRESOLVED = "can't tell which repo this commits in; personal data not checked";
 export const ASK_SPLIT = "can't parse env -S; personal data not checked";
-
-/** An unresolved reason "<command fragment> (<why>)" with the fragment cut to about 60 characters ("…" when cut). */
-export function capFragment(reason, max = 60) {
-	const i = reason.endsWith(")") ? reason.lastIndexOf(" (") : -1;
-	const fragment = i > 0 ? reason.slice(0, i) : reason;
-	const why = i > 0 ? reason.slice(i) : "";
-	return (fragment.length > max ? `${fragment.slice(0, max - 1)}…` : fragment) + why;
-}
+export const ASK_UNPARSED = "can't parse this commit; personal data not checked";
 
 /** The whole hook, as data: {exit, json?}. The session project's config and denylist apply to every commit. */
 export function privacyPreBash(input, env = process.env) {
@@ -34,7 +29,7 @@ export function privacyPreBash(input, env = process.env) {
 	const asks = [];
 	const chunks = [];
 	for (const p of plans) {
-		if (p.unparsable) asks.push(ASK_SPLIT);
+		if (p.unparsable) asks.push(p.unparsable === "env -S" ? ASK_SPLIT : ASK_UNPARSED);
 		else if (p.dir === null) asks.push(`${ASK_UNRESOLVED} (${capFragment(p.unresolved)})`);
 		else {
 			const where = path.resolve(p.dir) === path.resolve(cwd) ? "" : `${path.relative(cwd, p.dir) || "."}: `;

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { commitPlans, gitSub, normalizeCommand, resolveDir, shellWords, splitCommands, splitWithOps, trackCommands, words } from "../shared/commit-content.mjs";
+import { capFragment, commitPlans, gitSub, normalizeCommand, resolveDir, shellWords, splitCommands, splitWithOps, trackCommands, words } from "../shared/commit-content.mjs";
 
 /** root/{a, b, my dir, a/inner}, a fake home with proj/, and a file (not a directory). */
 function fixture() {
@@ -261,4 +261,53 @@ test("the older exports that stay (gitSub, words, splitCommands) are unchanged; 
 	assert.deepEqual(words(`a "b c" 'd'`), ["a", "b c", "d"]);
 	assert.deepEqual(splitCommands("a && b | c; d"), ["a", "b", "c", "d"]);
 	assert.equal((await import("../shared/commit-content.mjs")).commitPlan, undefined, "replaced by commitPlans");
+});
+
+test("normalizeCommand: runners and shell keywords are unwrapped, nested", () => {
+	const forms = [
+		"! git commit -m x", "if git commit -m x", "then git commit -m x", "else git commit -m x", "elif git commit -m x", "do git commit -m x", "while git commit -m x", "until git commit -m x", "{ git commit -m x",
+		"time git commit -m x", "time -p git commit -m x",
+		"nohup git commit -m x", "nohup -- git commit -m x",
+		"exec git commit -m x", "exec -a NAME git commit -m x", "exec -cl git commit -m x",
+		"timeout 5 git commit -m x", "timeout -s KILL -k 2 5s git commit -m x", "timeout --signal=TERM --kill-after=1 10 git commit -m x", "timeout --preserve-status -v 5 git commit -m x",
+		"nice git commit -m x", "nice -n 10 git commit -m x", "nice -n10 git commit -m x", "nice -5 git commit -m x", "nice --adjustment=3 git commit -m x",
+		"ionice -c 2 -n 7 git commit -m x", "ionice -c2 -n7 -t git commit -m x",
+		"stdbuf -oL git commit -m x", "stdbuf -i 0 -o L -e 0 git commit -m x", "stdbuf --output=L git commit -m x",
+		"chrt -f 10 git commit -m x", "chrt --batch 0 git commit -m x", "chrt -d -T 100 -P 200 0 git commit -m x",
+		"taskset 0x3 git commit -m x", "taskset -c 0,1 git commit -m x", "taskset -a -c 0-3 git commit -m x",
+		"setsid git commit -m x", "setsid -f -w git commit -m x",
+		"nohup sudo env git commit -m x", "time nice -n 5 timeout 3 sudo -u x git commit -m x", "! nohup /usr/bin/git commit -m x", "if ! timeout 5 git commit -m x"
+	];
+	for (const f of forms) assert.deepEqual(normalizeCommand(f).words.slice(0, 2), ["git", "commit"], f);
+});
+
+test("commitPlans: commits behind runners and keywords are planned normally", () => {
+	const f = fixture();
+	for (const line of ["if true; then git commit -m x; fi", "! git commit -m x", "nohup git commit -m x", "timeout 5 git commit -m x", "while true; do git commit -m x; done", "nohup sudo env git commit -m x"]) {
+		const p = only(commitPlans(line, f.opts));
+		assert.equal(p.dir, f.root, line);
+	}
+	assert.equal(only(commitPlans(`timeout 5 git -C ${f.at("a")} commit -m x`, f.opts)).dir, f.at("a"));
+});
+
+test("commitPlans: an unrecognised command mentioning git … commit, or a shell -c string that does → unparsable", () => {
+	const f = fixture();
+	for (const line of ["xargs git commit", "xargs -0 git commit -m x", "xargs /usr/bin/git commit -m x", "eval git commit -m x", "parallel git commit ::: a", "bash -c 'git commit -am x'", 'sh -c "cd x && git commit"', "zsh -lc 'git commit -m x'", "dash -ec 'git commit -m x'", "bash -o pipefail -c 'git commit -m x'", "ksh -c 'git -C x commit'"]) {
+		assert.deepEqual(commitPlans(line, f.opts), [{ unparsable: "commit" }], line);
+	}
+});
+
+test("commitPlans: quoted strings and other git commands don't trigger the catch-all", () => {
+	const f = fixture();
+	for (const line of ['echo "git commit"', "grep 'git commit' notes.txt", "git log --grep commit", "git help commit", "bash -c 'echo hi'", "bash -c 'git status'", "bash script.sh commit", "echo git", 'printf "%s" "git commit -m x"', "commit git"]) {
+		assert.deepEqual(commitPlans(line, f.opts), [], line);
+	}
+	assert.equal(only(commitPlans("git commit -m x", f.opts)).dir, f.root, "a recognised commit is planned, not unparsable");
+});
+
+test("capFragment cuts the command fragment, keeps the explanation", () => {
+	assert.equal(capFragment("short (why)"), "short (why)");
+	assert.equal(capFragment(`${"x".repeat(80)} (why)`), `${"x".repeat(59)}… (why)`);
+	assert.equal(capFragment("x".repeat(61)), `${"x".repeat(59)}…`);
+	assert.equal(capFragment("cd inside a ( … ) subshell (commands after it there aren't tracked)"), "cd inside a ( … ) subshell (commands after it there aren't tracked)");
 });

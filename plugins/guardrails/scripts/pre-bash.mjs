@@ -13,21 +13,14 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { decision, defaultBranch, finish, git, loadConfig, projectDirOf, readInput } from "./lib.mjs";
 import { isMain } from "./is-main.mjs";
-import { commitPlans, contentToCommit, parseGit, resolveDir, trackCommands } from "./commit-content.mjs";
+import { capFragment, commitPlans, contentToCommit, parseGit, resolveDir, trackCommands } from "./commit-content.mjs";
 
-export { commitPlans, addedLines, contentToCommit } from "./commit-content.mjs";
+export { capFragment, commitPlans, addedLines, contentToCommit } from "./commit-content.mjs";
 
 /** Why the secret check asks instead of scanning. */
 export const ASK_UNRESOLVED = "can't tell which repo this commits in; secrets not checked";
 export const ASK_SPLIT = "can't parse env -S; secrets not checked";
-
-/** An unresolved reason "<command fragment> (<why>)" with the fragment cut to about 60 characters ("…" when cut). */
-export function capFragment(reason, max = 60) {
-	const i = reason.endsWith(")") ? reason.lastIndexOf(" (") : -1;
-	const fragment = i > 0 ? reason.slice(0, i) : reason;
-	const why = i > 0 ? reason.slice(i) : "";
-	return (fragment.length > max ? `${fragment.slice(0, max - 1)}…` : fragment) + why;
-}
+export const ASK_UNPARSED = "can't parse this commit; secrets not checked";
 
 /** Built-in secret patterns (used when gitleaks isn't installed). */
 export const SECRET_PATTERNS = [
@@ -112,7 +105,7 @@ export function secretCheck(line, cwd, opts = {}) {
 	const asks = [];
 	const chunks = [];
 	for (const p of plans) {
-		if (p.unparsable) asks.push(ASK_SPLIT);
+		if (p.unparsable) asks.push(p.unparsable === "env -S" ? ASK_SPLIT : ASK_UNPARSED);
 		else if (p.dir === null) asks.push(`${ASK_UNRESOLVED} (${capFragment(p.unresolved)})`);
 		else for (const c of contentToCommit(p.dir, p)) chunks.push({ ...c, repo: p.dir });
 	}

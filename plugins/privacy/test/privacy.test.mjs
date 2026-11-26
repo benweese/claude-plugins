@@ -9,7 +9,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { builtInDetectors, loadDenylist, loadPrivacyConfig, luhn, parseDenylist, scanChunks } from "../scripts/detectors.mjs";
-import { privacyPreBash, ASK_SPLIT, ASK_UNRESOLVED, capFragment } from "../scripts/pre-bash.mjs";
+import { privacyPreBash, ASK_SPLIT, ASK_UNPARSED, ASK_UNRESOLVED, capFragment } from "../scripts/pre-bash.mjs";
 import { refresh, scan } from "../scripts/scan.mjs";
 import { install } from "../bin/install-privacy-git-hook";
 
@@ -280,4 +280,17 @@ test("commit hook ask reason: a long command fragment is cut to about 60 charact
 	assert.equal(m[1].length, 60);
 	assert.ok(m[1].endsWith("…") && m[1].startsWith("$(git -C very/long/path/"), m[1]);
 	assert.equal(capFragment("short (why)"), "short (why)");
+});
+
+test("commit hook as a real hook: nohup git commit is denied; xargs git commit asks", { skip: !unix }, () => {
+	const r = repo({ version: 1, commitHook: true });
+	r.write("a.txt", `${EMAIL}\n`);
+	r.g("add", "a.txt");
+	const run = (command) => JSON.parse(spawnSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify({ cwd: r.dir, tool_name: "Bash", tool_input: { command } }), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir } }).stdout).hookSpecificOutput;
+	const denied = run("nohup git commit -m x");
+	assert.equal(denied.permissionDecision, "deny");
+	assert.match(denied.permissionDecisionReason, /a\.txt:1\s+email address/);
+	const asked = run("xargs git commit");
+	assert.equal(asked.permissionDecision, "ask");
+	assert.equal(asked.permissionDecisionReason, `privacy: ${ASK_UNPARSED}.`);
 });
