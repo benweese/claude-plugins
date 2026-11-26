@@ -49,9 +49,25 @@ jobs:
                and report failures with the failing test.
             5. Bugs, edge cases and missing tests in the changed code.
 
-            Keep it short: lead with what must change, then nits. Don't repeat what's fine.
+            # from benweese/claude-plugins docs/review-rules.md
+            Review rules (every review follows all of them):
+            - Verified: check each finding against the current diff and the code it touches. Report only what the diff
+              shows; a finding about unchanged code needs the changed line that triggers it.
+            - Defects: report real defects: wrong behaviour, a check that can be skipped, data loss, a security or privacy
+              leak, a missing test for changed behaviour. Lead with these; put style and wording last, marked as nits.
+            - Unsure: when you can't confirm a finding, say so in the comment and name what would settle it (a test, a
+              command, a file to read).
+            - False positives: when a suspected problem turns out to be correct code, say in one line why it's correct and
+              leave the code as it is.
+            - Read-only: post comments, and only comments. The branch stays exactly as you found it: no pushes, commits or
+              file edits.
+            - One review: this run is the whole review. Do the checks yourself, in this run; start no other review, review
+              command or review workflow from it.
+            - Tests: flag any PR where a test heal changed an `expect` (the assertion itself, not a locator or a wait), and
+              any hard `expect` with no `// precondition` comment explaining why it must stop the test.
+
+            Keep it short; don't repeat what's fine.
             Use `gh pr comment` for one summary comment, and
             `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) for specific lines.
-            Only post GitHub comments. Never push or edit files.
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(node --test:*)"
