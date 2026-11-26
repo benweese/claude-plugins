@@ -453,3 +453,107 @@ test("as a real hook: commits behind runners and keywords are denied; an unparsa
 	assert.equal(xargs.permissionDecisionReason, "guardrails: can't see xargs arguments; secrets not checked. Run it anyway?");
 	assert.equal(spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, 'echo "git commit"')), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir } }).stdout, "", "a quoted mention isn't a commit");
 });
+
+// ---- #31: git aliases and quoted eval, through the real hook ----
+test("as a real hook: git aliases are checked as commits; shell aliases, loops and quoted eval ask; a log alias doesn't", { skip: !unix }, () => {
+	const r = repo();
+	for (const [k, v] of Object.entries({ ci: "commit", cia: "commit -a", sc: "!sh -c 'git commit -m x'", l: "log", status: "commit" })) r.g("config", `alias.${k}`, v);
+	const globalFile = path.join(mkdtempSync(path.join(tmpdir(), "guardrails-gitcfg-")), "gitconfig");
+	writeFileSync(globalFile, "[alias]\n\tgci = commit\n");
+	const run = (command, cwd = r.dir) => {
+		const res = spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], {
+			input: JSON.stringify(bash(cwd, command)),
+			encoding: "utf8",
+			env: { ...process.env, CLAUDE_PROJECT_DIR: cwd, PATH: "/usr/bin:/bin", GIT_CONFIG_GLOBAL: globalFile, GIT_CONFIG_NOSYSTEM: "1" }
+		});
+		assert.equal(res.status, 0, `${command}: ${res.stderr}`);
+		return res.stdout ? JSON.parse(res.stdout).hookSpecificOutput : undefined;
+	};
+	r.write("config.js", `const token = "${FAKE_GH}";\n`); // built at run time
+	r.g("add", "config.js");
+	for (const command of ["git ci -m x", "git -c alias.x=commit x -m y", "git gci -m x"]) {
+		const out = run(command);
+		assert.equal(out?.permissionDecision, "deny", command);
+		assert.match(out.permissionDecisionReason, /config\.js:1\s+GitHub token/, command);
+	}
+	assert.equal(run("git sc")?.permissionDecisionReason, "guardrails: can't parse this commit; secrets not checked. Run it anyway?", "a shell alias running git commit");
+	for (const command of ['eval "git commit -m x"', "eval 'git commit -m x'"]) assert.equal(run(command)?.permissionDecision, "deny", `${command}: parsed and scanned`);
+	assert.equal(run("git l --oneline"), undefined, "an alias to log isn't a commit");
+	assert.equal(run("git status"), undefined, "alias.status is ignored, as git ignores it");
+	assert.equal(run('eval "echo hi"'), undefined);
+	// alias.cia = commit -a: an unstaged change is scanned
+	const u = secretRepo();
+	u.g("config", "alias.cia", "commit -a");
+	assert.equal(run("git cia -m x", u.dir)?.permissionDecision, "deny");
+	// an alias defined in the repo the command cds into is resolved there
+	const here = repo();
+	const other = secretRepo();
+	other.g("config", "alias.oci", "commit -a");
+	assert.equal(run(`cd ${other.dir} && git oci -m x`, here.dir)?.permissionDecision, "deny");
+	assert.equal(run("git oci -m x", here.dir), undefined, "not an alias in the starting repo");
+});
+
+test("as a real hook: aliases inside bash -c / eval strings are scanned; xargs asks; nesting > 3 asks; config prefixes count", { skip: !unix }, () => {
+	const r = repo();
+	r.g("config", "alias.ci", "commit");
+	r.write("config.js", `const token = "${FAKE_GH}";\n`); // built at run time
+	r.g("add", "config.js");
+	const empty = path.join(mkdtempSync(path.join(tmpdir(), "guardrails-gitcfg-")), "gitconfig");
+	writeFileSync(empty, "");
+	const run = (command) => {
+		const res = spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], {
+			input: JSON.stringify(bash(r.dir, command)),
+			encoding: "utf8",
+			env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir, PATH: "/usr/bin:/bin", GIT_CONFIG_GLOBAL: empty, GIT_CONFIG_NOSYSTEM: "1" }
+		});
+		assert.equal(res.status, 0, `${command}: ${res.stderr}`);
+		return res.stdout ? JSON.parse(res.stdout).hookSpecificOutput : undefined;
+	};
+	for (const command of ['bash -c "git ci -m x"', 'eval "git ci -m x"', "sh -c 'git commit -m x'"]) {
+		const out = run(command);
+		assert.equal(out?.permissionDecision, "deny", command);
+		assert.match(out.permissionDecisionReason, /config\.js:1\s+GitHub token/, command);
+	}
+	assert.equal(run("xargs git ci")?.permissionDecisionReason, "guardrails: can't see xargs arguments; secrets not checked. Run it anyway?");
+	assert.equal(run(`bash -c "bash -c \\"bash -c 'bash -c git ci'\\""`)?.permissionDecisionReason, "guardrails: can't parse this commit; secrets not checked. Run it anyway?", "nested more than 3 deep");
+	assert.equal(run('bash -c "echo hi"'), undefined);
+	// the command's own config prefixes: an alias only they define
+	const other = repo();
+	other.write("config.js", `const token = "${FAKE_GH}";\n`);
+	other.g("add", "config.js");
+	const cfg = path.join(mkdtempSync(path.join(tmpdir(), "guardrails-gitcfg-")), "gitconfig");
+	writeFileSync(cfg, "[alias]\n\tci = commit\n");
+	const runOther = (command) => {
+		const res = spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(other.dir, command)), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: other.dir, PATH: "/usr/bin:/bin", GIT_CONFIG_GLOBAL: empty, GIT_CONFIG_NOSYSTEM: "1" } });
+		return res.stdout ? JSON.parse(res.stdout).hookSpecificOutput : undefined;
+	};
+	assert.equal(runOther("git ci -m x"), undefined, "no alias without the prefix");
+	assert.equal(runOther(`GIT_CONFIG_GLOBAL=${cfg} git ci -m x`)?.permissionDecision, "deny");
+	assert.equal(runOther("GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0=commit git ci -m x")?.permissionDecision, "deny");
+	assert.equal(runOther("GIT_CONFIG_GLOBAL=$X git ci")?.permissionDecisionReason, "guardrails: can't parse this commit; secrets not checked. Run it anyway?");
+});
+
+test("as a real hook: outer prefixes reach bash -c; export / unset carry over; any shell alias running git asks", { skip: !unix }, () => {
+	const r = repo();
+	r.write("config.js", `const token = "${FAKE_GH}";\n`); // built at run time
+	r.g("add", "config.js");
+	r.g("config", "alias.x", '!f() { git "$@"; }; f');
+	r.g("config", "alias.hi", "!echo hi");
+	const dir = mkdtempSync(path.join(tmpdir(), "guardrails-gitcfg-"));
+	const empty = path.join(dir, "empty");
+	const cfg = path.join(dir, "with-alias");
+	writeFileSync(empty, "");
+	writeFileSync(cfg, "[alias]\n\tci = commit\n");
+	const run = (command) => {
+		const res = spawnSync(process.execPath, [path.join(HERE, "..", "scripts", "pre-bash.mjs")], { input: JSON.stringify(bash(r.dir, command)), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: r.dir, PATH: "/usr/bin:/bin", GIT_CONFIG_GLOBAL: empty, GIT_CONFIG_NOSYSTEM: "1" } });
+		assert.equal(res.status, 0, `${command}: ${res.stderr}`);
+		return res.stdout ? JSON.parse(res.stdout).hookSpecificOutput : undefined;
+	};
+	const ASK = "guardrails: can't parse this commit; secrets not checked. Run it anyway?";
+	assert.equal(run(`GIT_CONFIG_GLOBAL=${cfg} bash -c 'git ci -m x'`)?.permissionDecision, "deny");
+	assert.equal(run(`export GIT_CONFIG_GLOBAL=${cfg}; git ci -m x`)?.permissionDecision, "deny");
+	assert.equal(run("export GIT_CONFIG_GLOBAL=$X; git ci")?.permissionDecisionReason, ASK);
+	assert.equal(run(`( export GIT_CONFIG_GLOBAL=${cfg} ); git ci -m x`), undefined, "the subshell's export ended");
+	assert.equal(run("git x commit -m y")?.permissionDecisionReason, ASK, "a shell alias that runs git");
+	assert.equal(run("git hi"), undefined, "a shell alias without git");
+});
