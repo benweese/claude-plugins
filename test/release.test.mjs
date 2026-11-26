@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { changelogSection, checkTag, main, parseTag, planReleases } from "../scripts/release.mjs";
+import { changelogSection, checkTag, main, parseTag, planReleases, remoteReleaseTags } from "../scripts/release.mjs";
 
 const LOG = "# Changelog\n\nIntro.\n\n## [1.2.0] - 2026-11-21\n\n### Added\n\n- New thing.\n\n## [1.1.0] - 2026-11-20\n\n### Fixed\n\n- Old bug.\n";
 const REPO = "example-owner/example-repo";
@@ -301,4 +301,65 @@ test("release.yml: per-ref concurrency group, no cancelling; tag-push and manual
 	assert.match(yml, /^ {2}push:\n {4}tags: \["\*--v\*"\]$/m);
 	assert.match(yml, /^ {2}workflow_dispatch:$/m);
 	assert.doesNotMatch(yml, /branches:/, "no longer runs on pushes to main");
+});
+
+test("a release created by someone else meanwhile is a skip, not an error (re-check before create, and 'already exists')", () => {
+	const f = fixture();
+	const tags = { "qa--v1.2.0": signed(f.first) };
+	// 1. the re-check right before create sees it: no create call at all
+	const r1 = runner(f.dir, { tags });
+	let lists = 0;
+	const gh1 = r1.gh;
+	r1.gh = (args) => (String(args[2]).endsWith("/releases") && ++lists > 1 ? { status: 0, stdout: "qa--v1.2.0\n", stderr: "" } : gh1(args));
+	const out1 = [];
+	assert.equal(main([], { GITHUB_REPOSITORY: REPO }, r1, (s) => out1.push(s), () => {}), 0);
+	assert.deepEqual(out1, ["skip qa--v1.2.0: already released (qa--v1.2.0)"]);
+	assert.equal(r1.calls.gh.some((a) => a[0] === "release"), false);
+	// 2. it appears between the re-check and the create: gh says "already exists"
+	const r2 = runner(f.dir, { tags });
+	const gh2 = r2.gh;
+	r2.gh = (args) => (args[0] === "release" ? (r2.calls.gh.push(args), { status: 1, stdout: "", stderr: "HTTP 422: Validation Failed\na release with the same tag name already exists: qa--v1.2.0" }) : gh2(args));
+	const out2 = [];
+	const err2 = [];
+	assert.equal(main([], { GITHUB_REPOSITORY: REPO }, r2, (s) => out2.push(s), (s) => err2.push(s)), 0);
+	assert.deepEqual(out2, ["skip qa--v1.2.0: already released (created while this run was going)"]);
+	assert.deepEqual(err2, []);
+	// any other create failure is an error for that tag (exit 1), not an abort
+	const r3 = runner(f.dir, { tags });
+	const gh3 = r3.gh;
+	r3.gh = (args) => (args[0] === "release" ? { status: 1, stdout: "", stderr: "HTTP 403: Resource not accessible by integration" } : gh3(args));
+	const err3 = [];
+	assert.equal(main([], { GITHUB_REPOSITORY: REPO }, r3, () => {}, (s) => err3.push(s)), 1);
+	assert.match(err3[0], /^not released qa--v1\.2\.0: creating the release for qa--v1\.2\.0: HTTP 403/);
+});
+
+test("--tag and RELEASE_TAG are trimmed", () => {
+	const f = fixture();
+	const tags = { "qa--v1.2.0": signed(f.first) };
+	for (const [argv, env] of [[["--dry-run", "--tag", "  qa--v1.2.0 \n"], {}], [["--dry-run"], { RELEASE_TAG: " qa--v1.2.0\t" }]]) {
+		const r = runner(f.dir, { tags });
+		const out = [];
+		const err = [];
+		assert.equal(main(argv, { GITHUB_REPOSITORY: REPO, ...env }, r, (s) => out.push(s), (s) => err.push(s)), 0, err.join("\n"));
+		assert.match(out[0], /^would release qa--v1\.2\.0:/);
+	}
+	const blank = runner(f.dir, { tags: {}, remoteTags: [] });
+	const out = [];
+	assert.equal(main([], { GITHUB_REPOSITORY: REPO, RELEASE_TAG: "   " }, blank, (s) => out.push(s), () => {}), 0);
+	assert.equal(blank.calls.git.some((a) => a[0] === "ls-remote"), true, "a blank RELEASE_TAG means catch-up");
+});
+
+test("remoteReleaseTags: only <plugin>--v<version> names, each once (peeled ^{} lines, other tags ignored)", () => {
+	const lsRemote = [
+		"1111111111111111111111111111111111111111\trefs/tags/qa--v1.5.1",
+		"2222222222222222222222222222222222222222\trefs/tags/qa--v1.5.1^{}",
+		"3333333333333333333333333333333333333333\trefs/tags/v0.10.0",
+		"4444444444444444444444444444444444444444\trefs/tags/v0.10.0^{}",
+		"5555555555555555555555555555555555555555\trefs/tags/qa-v1.5.1",
+		"6666666666666666666666666666666666666666\trefs/tags/docs--v0.2.0",
+		"7777777777777777777777777777777777777777\trefs/heads/main",
+		""
+	].join("\n");
+	const fake = { git: (args) => (args[0] === "ls-remote" ? { status: 0, stdout: lsRemote, stderr: "" } : { status: 1, stdout: "", stderr: "unexpected" }) };
+	assert.deepEqual(remoteReleaseTags(fake), ["qa--v1.5.1", "docs--v0.2.0"]);
 });

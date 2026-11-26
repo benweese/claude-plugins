@@ -68,7 +68,8 @@ export function publishedTags(runner, repo) {
 /** Every <plugin>--v<version> tag on origin. */
 export function remoteReleaseTags(runner) {
 	const out = ok(runner.git(["ls-remote", "--tags", "origin"]), "listing tags");
-	return out.split("\n").map((l) => l.split("\t")[1] || "").filter((r) => r.startsWith("refs/tags/") && !r.endsWith("^{}")).map((r) => r.slice("refs/tags/".length)).filter((t) => parseTag(t));
+	const names = out.split("\n").map((l) => l.split("\t")[1] || "").filter((r) => r.startsWith("refs/tags/") && !r.endsWith("^{}")).map((r) => r.slice("refs/tags/".length)).filter((t) => parseTag(t));
+	return [...new Set(names)];
 }
 
 /** What GitHub says about a tag: {kind: "lightweight" | "annotated" | "nested", commit, verified, reason}. */
@@ -155,7 +156,7 @@ export function publish(runner, r) {
 export function main(argv, env = process.env, runner = realRunner(process.cwd()), log = console.log, logError = console.error) {
 	const dry = argv.includes("--dry-run");
 	const i = argv.indexOf("--tag");
-	const one = (i !== -1 ? argv[i + 1] : env.RELEASE_TAG) || "";
+	const one = ((i !== -1 ? argv[i + 1] : env.RELEASE_TAG) || "").trim();
 	try {
 		if (runner.git(["fetch", "--quiet", "origin"]).status !== 0) logError("warning: git fetch failed; origin/main may be stale"); // best effort
 		const repo = env.GITHUB_REPOSITORY || ok(runner.gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]), "finding the repo").trim();
@@ -163,10 +164,23 @@ export function main(argv, env = process.env, runner = realRunner(process.cwd())
 		const plan = planReleases(tags, { runner, repo, published: publishedTags(runner, repo) });
 		for (const s of plan.skip) log(`skip ${s.tag}: ${s.reason}`);
 		for (const r of plan.release) {
-			if (dry) log(`would release ${r.tag}${r.prerelease ? " (pre-release)" : ""}:\n${r.notes}\n`);
-			else {
+			if (dry) {
+				log(`would release ${r.tag}${r.prerelease ? " (pre-release)" : ""}:\n${r.notes}\n`);
+				continue;
+			}
+			// Another run (or a person) may have released it since the plan: check again right before creating.
+			const now = publishedTags(runner, repo);
+			const old = `${r.name}-v${r.version}`;
+			if (now.has(r.tag) || now.has(old)) {
+				log(`skip ${r.tag}: already released (${now.has(r.tag) ? r.tag : old})`);
+				continue;
+			}
+			try {
 				publish(runner, r);
 				log(`released ${r.tag}`);
+			} catch (e) {
+				if (/already exists/i.test(e.message)) log(`skip ${r.tag}: already released (created while this run was going)`);
+				else plan.errors.push({ action: "error", tag: r.tag, reason: e.message });
 			}
 		}
 		for (const e of plan.errors) logError(`not released ${e.tag}: ${e.reason}`);
